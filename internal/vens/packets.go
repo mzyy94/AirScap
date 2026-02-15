@@ -1,6 +1,7 @@
 package vens
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -44,86 +45,213 @@ func nullTerminated(b []byte) string {
 }
 
 // --------------------------------------------------------------------------
+// packet is a helper for building binary packets with sparse field layouts.
+// --------------------------------------------------------------------------
+
+type packet []byte
+
+func newPacket(size int) packet               { return make(packet, size) }
+func (p packet) putU32(off int, v uint32)     { binary.BigEndian.PutUint32(p[off:], v) }
+func (p packet) putU16(off int, v uint16)     { binary.BigEndian.PutUint16(p[off:], v) }
+func (p packet) putBytes(off int, b []byte)   { copy(p[off:], b) }
+
+// --------------------------------------------------------------------------
+// Wire types — struct layout matches the on-wire format byte-for-byte.
+// Padding fields (_) are zero-initialized automatically.
+// Serialize/deserialize with binary.Write/Read (BigEndian).
+// --------------------------------------------------------------------------
+
+// controlHeader is the 24-byte common header for TCP control channel packets.
+type controlHeader struct {
+	Size    uint32   // [0:4]
+	Magic   [4]byte  // [4:8]
+	Command uint32   // [8:12]
+	_       [4]byte  // [12:16]
+	Token   [8]byte  // [16:24]
+}
+
+// registerRequestWire is a 32-byte register/deregister packet.
+type registerRequestWire struct {
+	controlHeader        // [0:24]
+	Action        uint32 // [24:28]
+	_             [4]byte // [28:32]
+}
+
+// statusRequestWire is a 32-byte status request packet.
+type statusRequestWire struct {
+	controlHeader        // [0:24]
+	_             [8]byte // [24:32]
+}
+
+// dataHeader is the 36-byte common header for TCP data channel requests.
+type dataHeader struct {
+	Size      uint32   // [0:4]
+	Magic     [4]byte  // [4:8]
+	Direction uint32   // [8:12]  1=client→scanner
+	_         [4]byte  // [12:16]
+	Token     [8]byte  // [16:24]
+	_         [8]byte  // [24:32]
+	Command   uint32   // [32:36]
+}
+
+// broadcastWire is a 48-byte scanner advertisement (UDP:53220).
+type broadcastWire struct {
+	_        [4]byte  // [0:4]
+	Magic    [4]byte  // [4:8]
+	Command  uint32   // [8:12]
+	_        [8]byte  // [12:20]
+	DeviceIP [4]byte  // [20:24]
+	_        [24]byte // [24:48]
+}
+
+// deviceInfoWire is a 132-byte device info response (UDP:55264).
+type deviceInfoWire struct {
+	Magic       [4]byte  // [0:4]
+	Paired      uint16   // [4:6]
+	_           [10]byte // [6:16]
+	DeviceIP    [4]byte  // [16:20]
+	_           [2]byte  // [20:22]
+	DataPort    uint16   // [22:24]
+	_           [2]byte  // [24:26]
+	ControlPort uint16   // [26:28]
+	MAC         [6]byte  // [28:34]
+	_           [2]byte  // [34:36]
+	State       uint32   // [36:40]
+	Serial      [64]byte // [40:104]
+	Name        [16]byte // [104:120]
+	ClientIP    [4]byte  // [120:124]
+	_           [8]byte  // [124:132]
+}
+
+// eventNotificationWire is a 48-byte event notification (UDP:55265).
+type eventNotificationWire struct {
+	_         [4]byte  // [0:4]
+	Magic     [4]byte  // [4:8]
+	EventType uint32   // [8:12]
+	_         [4]byte  // [12:16]
+	EventData uint32   // [16:20]
+	_         [28]byte // [20:48]
+}
+
+// pageHeaderWire is a 42-byte header preceding each JPEG data chunk.
+type pageHeaderWire struct {
+	TotalLength uint32   // [0:4]
+	Magic       [4]byte  // [4:8]
+	_           [4]byte  // [8:12]
+	PageType    uint32   // [12:16]
+	_           [24]byte // [16:40]
+	Sheet       uint8    // [40]
+	Side        uint8    // [41]
+}
+
+// --------------------------------------------------------------------------
+// Serialization helpers
+// --------------------------------------------------------------------------
+
+func writeWire(v any) []byte {
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.BigEndian, v)
+	return buf.Bytes()
+}
+
+func readWire(data []byte, v any) error {
+	return binary.Read(bytes.NewReader(data), binary.BigEndian, v)
+}
+
+// --------------------------------------------------------------------------
 // UDP packets
 // --------------------------------------------------------------------------
 
 // ParseBroadcastAdvertisement parses a 48-byte scanner broadcast (UDP:53220).
 func ParseBroadcastAdvertisement(data []byte) (deviceIP string, err error) {
-	if len(data) < 48 || data[4] != Magic[0] || data[5] != Magic[1] || data[6] != Magic[2] || data[7] != Magic[3] {
+	if len(data) < 48 {
 		return "", errors.New("not a VENS broadcast")
 	}
-	cmd := binary.BigEndian.Uint32(data[8:12])
-	if cmd != CmdBroadcast {
-		return "", fmt.Errorf("unexpected broadcast command: 0x%X", cmd)
+	var wire broadcastWire
+	readWire(data[:48], &wire)
+	if wire.Magic != Magic {
+		return "", errors.New("not a VENS broadcast")
 	}
-	return ipFromBytes(data[20:24]), nil
+	if wire.Command != CmdBroadcast {
+		return "", fmt.Errorf("unexpected broadcast command: 0x%X", wire.Command)
+	}
+	return ipFromBytes(wire.DeviceIP[:]), nil
 }
 
 // MarshalDiscoveryVENS builds a 32-byte VENS discovery/heartbeat packet.
 func MarshalDiscoveryVENS(clientIP string, token [8]byte, clientPort uint16, heartbeat bool) []byte {
-	buf := make([]byte, 32)
-	copy(buf[0:4], Magic[:])
+	p := newPacket(32)
+	p.putBytes(0, Magic[:])
 	if heartbeat {
-		binary.BigEndian.PutUint32(buf[4:8], 1) // flags=1 for heartbeat
+		p.putU32(4, 1)
 	}
 	ip := ipToBytes(clientIP)
-	copy(buf[8:12], ip[:])
-	copy(buf[12:20], token[:])
-	binary.BigEndian.PutUint16(buf[22:24], clientPort)
-	buf[24] = 0x00
-	buf[25] = 0x10
-	return buf
+	p.putBytes(8, ip[:])
+	p.putBytes(12, token[:])
+	p.putU16(22, clientPort)
+	p[24] = 0x00
+	p[25] = 0x10
+	return p
 }
 
 // MarshalDiscoverySSNR builds a 32-byte ssNR companion packet.
 func MarshalDiscoverySSNR(clientIP string, token [8]byte, clientPort uint16) []byte {
-	buf := make([]byte, 32)
-	copy(buf[0:4], MagicSSNR[:])
+	p := newPacket(32)
+	p.putBytes(0, MagicSSNR[:])
 	ip := ipToBytes(clientIP)
-	copy(buf[8:12], ip[:])
-	copy(buf[12:20], token[:])
-	binary.BigEndian.PutUint16(buf[22:24], clientPort)
-	buf[24] = 0x01
-	return buf
+	p.putBytes(8, ip[:])
+	p.putBytes(12, token[:])
+	p.putU16(22, clientPort)
+	p[24] = 0x01
+	return p
 }
 
 // ParseDeviceInfo parses a 132-byte device info response (UDP:55264).
 func ParseDeviceInfo(data []byte) (*DeviceInfo, error) {
-	if len(data) < 132 || data[0] != Magic[0] || data[1] != Magic[1] || data[2] != Magic[2] || data[3] != Magic[3] {
+	if len(data) < 132 {
+		return nil, errors.New("not a VENS device info")
+	}
+	var wire deviceInfoWire
+	if err := readWire(data[:132], &wire); err != nil {
+		return nil, fmt.Errorf("device info: %w", err)
+	}
+	if wire.Magic != Magic {
 		return nil, errors.New("not a VENS device info")
 	}
 	info := &DeviceInfo{
-		Paired:      binary.BigEndian.Uint16(data[4:6]) != 0,
-		DeviceIP:    ipFromBytes(data[16:20]),
-		DataPort:    binary.BigEndian.Uint16(data[22:24]),
-		ControlPort: binary.BigEndian.Uint16(data[26:28]),
-		MAC:         macToString(data[28:34]),
-		State:       binary.BigEndian.Uint32(data[36:40]),
-		Serial:      nullTerminated(data[40:104]),
-		Name:        nullTerminated(data[104:120]),
+		Paired:      wire.Paired != 0,
+		DeviceIP:    ipFromBytes(wire.DeviceIP[:]),
+		DataPort:    wire.DataPort,
+		ControlPort: wire.ControlPort,
+		MAC:         macToString(wire.MAC[:]),
+		State:       wire.State,
+		Serial:      nullTerminated(wire.Serial[:]),
+		Name:        nullTerminated(wire.Name[:]),
 	}
-	clientIPRaw := data[120:124]
-	if clientIPRaw[0] != 0 || clientIPRaw[1] != 0 || clientIPRaw[2] != 0 || clientIPRaw[3] != 0 {
-		info.ClientIP = ipFromBytes(clientIPRaw)
+	if wire.ClientIP != [4]byte{} {
+		info.ClientIP = ipFromBytes(wire.ClientIP[:])
 	}
 	return info, nil
 }
 
 // ParseEventNotification parses a 48-byte event notification (UDP:55265).
 func ParseEventNotification(data []byte) (eventType uint32, eventData uint32, err error) {
-	if len(data) < 48 || data[4] != Magic[0] || data[5] != Magic[1] || data[6] != Magic[2] || data[7] != Magic[3] {
+	if len(data) < 48 {
 		return 0, 0, errors.New("not a VENS notification")
 	}
-	eventType = binary.BigEndian.Uint32(data[8:12])
-	eventData = binary.BigEndian.Uint32(data[16:20])
-	return eventType, eventData, nil
+	var wire eventNotificationWire
+	readWire(data[:48], &wire)
+	if wire.Magic != Magic {
+		return 0, 0, errors.New("not a VENS notification")
+	}
+	return wire.EventType, wire.EventData, nil
 }
 
 // --------------------------------------------------------------------------
 // TCP control channel packets (port 53219)
 // --------------------------------------------------------------------------
 
-// WelcomeSize is the size of the welcome packet sent at the start of every TCP connection.
+// WelcomeSize is the size of the welcome packet at connection start.
 const WelcomeSize = 16
 
 // ValidateWelcome checks a 16-byte welcome packet.
@@ -131,7 +259,7 @@ func ValidateWelcome(data []byte) error {
 	if len(data) < WelcomeSize {
 		return errors.New("welcome packet too short")
 	}
-	if data[4] != Magic[0] || data[5] != Magic[1] || data[6] != Magic[2] || data[7] != Magic[3] {
+	if [4]byte(data[4:8]) != Magic {
 		return errors.New("welcome packet: bad magic")
 	}
 	return nil
@@ -139,35 +267,31 @@ func ValidateWelcome(data []byte) error {
 
 // MarshalRegisterRequest builds a 32-byte register/deregister request.
 func MarshalRegisterRequest(token [8]byte, action uint32) []byte {
-	buf := make([]byte, 32)
-	binary.BigEndian.PutUint32(buf[0:4], 32)
-	copy(buf[4:8], Magic[:])
-	binary.BigEndian.PutUint32(buf[8:12], CmdRegister)
-	copy(buf[16:24], token[:])
-	binary.BigEndian.PutUint32(buf[24:28], action)
-	return buf
+	return writeWire(&registerRequestWire{
+		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdRegister, Token: token},
+		Action:        action,
+	})
 }
 
 // MarshalConfigureRequest builds a 384-byte configure request.
 func MarshalConfigureRequest(token [8]byte, clientIP string, notifyPort uint16, identity string, ts time.Time) []byte {
-	buf := make([]byte, 384)
-	binary.BigEndian.PutUint32(buf[0:4], 384)
-	copy(buf[4:8], Magic[:])
-	binary.BigEndian.PutUint32(buf[8:12], CmdConfigure)
-	copy(buf[16:24], token[:])
+	p := newPacket(384)
+	p.putU32(0, 384)
+	p.putBytes(4, Magic[:])
+	p.putU32(8, CmdConfigure)
+	p.putBytes(16, token[:])
 
 	// Config block
-	binary.BigEndian.PutUint32(buf[32:36], 0x00040500)
-	binary.BigEndian.PutUint32(buf[36:40], 0x00000001)
-	binary.BigEndian.PutUint32(buf[40:44], 0x00000001)
+	p.putU32(32, 0x00040500)
+	p.putU32(36, 0x00000001)
+	p.putU32(40, 0x00000001)
 	ip := ipToBytes(clientIP)
-	copy(buf[44:48], ip[:])
-	binary.BigEndian.PutUint16(buf[50:52], notifyPort)
+	p.putBytes(44, ip[:])
+	p.putU16(50, notifyPort)
 
 	// Identity string at offset 52 (max 44 bytes)
 	idStr := identity
 	if idStr == "" {
-		// Fallback: concatenate IP digits
 		parsed := net.ParseIP(clientIP).To4()
 		if parsed != nil {
 			idStr = fmt.Sprintf("%d%d%d%d", parsed[0], parsed[1], parsed[2], parsed[3])
@@ -177,29 +301,26 @@ func MarshalConfigureRequest(token [8]byte, clientIP string, notifyPort uint16, 
 	if len(idBytes) > 44 {
 		idBytes = idBytes[:44]
 	}
-	copy(buf[52:], idBytes)
+	p.putBytes(52, idBytes)
 
 	// Timestamp at offset 100
-	binary.BigEndian.PutUint16(buf[100:102], uint16(ts.Year()))
-	buf[102] = byte(ts.Month())
-	buf[103] = byte(ts.Day())
-	buf[104] = byte(ts.Hour())
-	buf[105] = byte(ts.Minute())
-	buf[106] = byte(ts.Second())
+	p.putU16(100, uint16(ts.Year()))
+	p[102] = byte(ts.Month())
+	p[103] = byte(ts.Day())
+	p[104] = byte(ts.Hour())
+	p[105] = byte(ts.Minute())
+	p[106] = byte(ts.Second())
 
 	// Client type constant
-	binary.BigEndian.PutUint32(buf[116:120], 0xFFFF8170)
-	return buf
+	p.putU32(116, 0xFFFF8170)
+	return p
 }
 
 // MarshalStatusRequest builds a 32-byte status request.
 func MarshalStatusRequest(token [8]byte) []byte {
-	buf := make([]byte, 32)
-	binary.BigEndian.PutUint32(buf[0:4], 32)
-	copy(buf[4:8], Magic[:])
-	binary.BigEndian.PutUint32(buf[8:12], CmdStatus)
-	copy(buf[16:24], token[:])
-	return buf
+	return writeWire(&statusRequestWire{
+		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdStatus, Token: token},
+	})
 }
 
 // ParseStatusResponse extracts the state field from a 32-byte status response.
@@ -222,78 +343,77 @@ func ParseConfigureResponse(data []byte) (status uint32, err error) {
 // TCP data channel packets (port 53218)
 // --------------------------------------------------------------------------
 
-// marshalDataRequest builds the common data channel request header.
+// marshalDataRequest builds a data channel request with the given command and params.
 func marshalDataRequest(token [8]byte, command uint32, params []byte) []byte {
-	total := 36 + len(params) // header(32) + command(4) + params
-	buf := make([]byte, total)
-	binary.BigEndian.PutUint32(buf[0:4], uint32(total))
-	copy(buf[4:8], Magic[:])
-	binary.BigEndian.PutUint32(buf[8:12], 1) // direction = client→server
-	copy(buf[16:24], token[:])
-	binary.BigEndian.PutUint32(buf[32:36], command)
-	copy(buf[36:], params)
-	return buf
+	hdr := writeWire(&dataHeader{
+		Size:      uint32(36 + len(params)),
+		Magic:     Magic,
+		Direction: 1,
+		Token:     token,
+		Command:   command,
+	})
+	return append(hdr, params...)
 }
 
 // MarshalGetDeviceInfo builds cmd=0x06, sub=0x12.
 func MarshalGetDeviceInfo(token [8]byte) []byte {
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[0:4], 0x00000060)
-	binary.BigEndian.PutUint32(params[12:16], 0x12000000)
-	binary.BigEndian.PutUint32(params[16:20], 0x60000000)
-	return marshalDataRequest(token, CmdGetSet, params)
+	p := newPacket(28)
+	p.putU32(0, 0x00000060)
+	p.putU32(12, 0x12000000)
+	p.putU32(16, 0x60000000)
+	return marshalDataRequest(token, CmdGetSet, p)
 }
 
 // MarshalGetScanSettings builds cmd=0x06, sub=0xD8.
 func MarshalGetScanSettings(token [8]byte) []byte {
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[12:16], 0xD8000000)
-	return marshalDataRequest(token, CmdGetSet, params)
+	p := newPacket(28)
+	p.putU32(12, 0xD8000000)
+	return marshalDataRequest(token, CmdGetSet, p)
 }
 
 // MarshalGetScanParams builds cmd=0x06, sub=0x90.
 func MarshalGetScanParams(token [8]byte) []byte {
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[0:4], 0x00000090)
-	binary.BigEndian.PutUint32(params[12:16], 0x1201F000)
-	binary.BigEndian.PutUint32(params[16:20], 0x90000000)
-	return marshalDataRequest(token, CmdGetSet, params)
+	p := newPacket(28)
+	p.putU32(0, 0x00000090)
+	p.putU32(12, 0x1201F000)
+	p.putU32(16, 0x90000000)
+	return marshalDataRequest(token, CmdGetSet, p)
 }
 
 // MarshalConfigCommand builds cmd=0x08.
 func MarshalConfigCommand(token [8]byte) []byte {
-	params := make([]byte, 32)
-	binary.BigEndian.PutUint32(params[4:8], 0x00000004)
-	binary.BigEndian.PutUint32(params[12:16], 0xEB000000)
-	binary.BigEndian.PutUint32(params[16:20], 0x00040000)
-	binary.BigEndian.PutUint32(params[28:32], 0x05010000)
-	return marshalDataRequest(token, CmdConfig, params)
+	p := newPacket(32)
+	p.putU32(4, 0x00000004)
+	p.putU32(12, 0xEB000000)
+	p.putU32(16, 0x00040000)
+	p.putU32(28, 0x05010000)
+	return marshalDataRequest(token, CmdConfig, p)
 }
 
 // MarshalGetStatus builds cmd=0x0A.
 func MarshalGetStatus(token [8]byte) []byte {
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[0:4], 0x00000020)
-	binary.BigEndian.PutUint32(params[12:16], 0xC2000000)
-	binary.BigEndian.PutUint32(params[20:24], 0x20000000)
-	return marshalDataRequest(token, CmdGetStatus, params)
+	p := newPacket(28)
+	p.putU32(0, 0x00000020)
+	p.putU32(12, 0xC2000000)
+	p.putU32(20, 0x20000000)
+	return marshalDataRequest(token, CmdGetStatus, p)
 }
 
 // MarshalPrepareScan builds cmd=0x06, sub=0xD5.
 func MarshalPrepareScan(token [8]byte) []byte {
-	params := make([]byte, 36)
-	binary.BigEndian.PutUint32(params[0:4], 0x00000008)
-	binary.BigEndian.PutUint32(params[4:8], 0x00000008)
-	binary.BigEndian.PutUint32(params[12:16], 0xD5000000)
-	binary.BigEndian.PutUint32(params[16:20], 0x08080000)
-	return marshalDataRequest(token, CmdGetSet, params)
+	p := newPacket(36)
+	p.putU32(0, 0x00000008)
+	p.putU32(4, 0x00000008)
+	p.putU32(12, 0xD5000000)
+	p.putU32(16, 0x08080000)
+	return marshalDataRequest(token, CmdGetSet, p)
 }
 
 // MarshalWaitForScan builds cmd=0x06, sub=0xE0.
 func MarshalWaitForScan(token [8]byte) []byte {
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[12:16], 0xE0000000)
-	return marshalDataRequest(token, CmdGetSet, params)
+	p := newPacket(28)
+	p.putU32(12, 0xE0000000)
+	return marshalDataRequest(token, CmdGetSet, p)
 }
 
 // MarshalPageTransfer builds cmd=0x0C for requesting scan page data.
@@ -303,21 +423,21 @@ func MarshalPageTransfer(token [8]byte, pageNum int, sheet int) []byte {
 	if sheet%2 == 1 {
 		pageFlags = 0x00800400 // odd sheet
 	}
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[0:4], 0x00040000) // 256KB buffer
-	binary.BigEndian.PutUint32(params[12:16], 0x28000002)
-	binary.BigEndian.PutUint32(params[16:20], pageFlags)
-	binary.BigEndian.PutUint32(params[20:24], uint32(pageNum))
-	return marshalDataRequest(token, CmdPageTransfer, params)
+	p := newPacket(28)
+	p.putU32(0, 0x00040000) // 256KB buffer
+	p.putU32(12, 0x28000002)
+	p.putU32(16, pageFlags)
+	p.putU32(20, uint32(pageNum))
+	return marshalDataRequest(token, CmdPageTransfer, p)
 }
 
 // MarshalGetPageMetadata builds cmd=0x06, sub=0x12 (in-scan variant).
 func MarshalGetPageMetadata(token [8]byte) []byte {
-	params := make([]byte, 28)
-	binary.BigEndian.PutUint32(params[0:4], 0x00000012)
-	binary.BigEndian.PutUint32(params[12:16], 0x03000000)
-	binary.BigEndian.PutUint32(params[16:20], 0x12000000)
-	return marshalDataRequest(token, CmdGetSet, params)
+	p := newPacket(28)
+	p.putU32(0, 0x00000012)
+	p.putU32(12, 0x03000000)
+	p.putU32(16, 0x12000000)
+	return marshalDataRequest(token, CmdGetSet, p)
 }
 
 // MarshalScanConfig builds the scan config SET packet (cmd=0x06, sub=0xD4).
@@ -340,90 +460,90 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	}
 
 	total := 64 + configSize
-	buf := make([]byte, total)
+	p := newPacket(total)
 
-	// Data channel header
-	binary.BigEndian.PutUint32(buf[0:4], uint32(total))
-	copy(buf[4:8], Magic[:])
-	binary.BigEndian.PutUint32(buf[8:12], 1) // direction = client
-	copy(buf[16:24], token[:])
-	binary.BigEndian.PutUint32(buf[32:36], CmdGetSet)
+	// Data channel header [0:36]
+	p.putU32(0, uint32(total))
+	p.putBytes(4, Magic[:])
+	p.putU32(8, 1) // direction = client
+	p.putBytes(16, token[:])
+	p.putU32(32, CmdGetSet)
 
-	// GET_SET param header
-	binary.BigEndian.PutUint32(buf[40:44], uint32(configSize))
-	binary.BigEndian.PutUint32(buf[48:52], 0xD4000000)
-	binary.BigEndian.PutUint32(buf[52:56], uint32(configSize)<<24)
+	// GET_SET param header [36:64]
+	p.putU32(40, uint32(configSize))
+	p.putU32(48, 0xD4000000)
+	p.putU32(52, uint32(configSize)<<24)
 
 	// Config data at offset 64
 	c := 64
 
 	// +1: duplex
 	if cfg.Duplex {
-		buf[c+1] = 0x03
+		p[c+1] = 0x03
 	} else {
-		buf[c+1] = 0x01
+		p[c+1] = 0x01
 	}
 	// +2, +5: full auto flags
 	if isFullAuto {
-		buf[c+2] = 0x01
-		buf[c+5] = 0x01
+		p[c+2] = 0x01
+		p[c+5] = 0x01
 	}
 	// +3: BW density flag
 	if isBW && cfg.BWDensity == 0 {
-		buf[c+3] = 0x02
+		p[c+3] = 0x02
 	} else if isFullAuto {
-		buf[c+3] = 0x01
+		p[c+3] = 0x01
 	}
 	// +4: multi-feed detection
 	if cfg.MultiFeed {
-		buf[c+4] = 0xD0
+		p[c+4] = 0xD0
 	} else {
-		buf[c+4] = 0x80
+		p[c+4] = 0x80
 	}
 	// +6: multi-feed detection
 	if cfg.MultiFeed {
-		buf[c+6] = 0xC1
+		p[c+6] = 0xC1
 	} else {
-		buf[c+6] = 0xC0
+		p[c+6] = 0xC0
 	}
 	// +7: auto color+quality
 	if isAutoColor && isAutoQuality {
-		buf[c+7] = 0xC1
+		p[c+7] = 0xC1
 	} else {
-		buf[c+7] = 0x80
+		p[c+7] = 0x80
 	}
 	// +8: blank page removal
 	if cfg.BlankPageRemoval {
-		buf[c+8] = 0xE0
+		p[c+8] = 0xE0
 	} else {
-		buf[c+8] = 0x80
+		p[c+8] = 0x80
 	}
 	// +9: constant
-	buf[c+9] = 0xC8
+	p[c+9] = 0xC8
 	// +10: auto quality
 	if isAutoQuality {
-		buf[c+10] = 0xA0
+		p[c+10] = 0xA0
 	} else {
-		buf[c+10] = 0x80
+		p[c+10] = 0x80
 	}
 	// +11: bleed-through
 	if cfg.BleedThrough {
-		buf[c+11] = 0xC0
+		p[c+11] = 0xC0
 	} else {
-		buf[c+11] = 0x80
+		p[c+11] = 0x80
 	}
 	// +12: constant
-	buf[c+12] = 0x80
+	p[c+12] = 0x80
 
 	// Front side params
-	buf[c+31] = 0x30
+	p[c+31] = 0x30
 	if isBW {
-		buf[c+33] = 0x40
+		p[c+33] = 0x40
 	} else {
-		buf[c+33] = 0x10
+		p[c+33] = 0x10
 	}
-	binary.BigEndian.PutUint16(buf[c+34:c+36], uint16(dpi))
-	binary.BigEndian.PutUint16(buf[c+36:c+38], uint16(dpi))
+	p.putU16(c+34, uint16(dpi))
+	p.putU16(c+36, uint16(dpi))
 
 	// +38-40: color encoding
 	colorEncTail := byte(0x0B)
@@ -431,56 +551,56 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 		colorEncTail = 0x09
 	}
 	if isGray {
-		buf[c+38] = 0x02
-		buf[c+39] = 0x82
-		buf[c+40] = colorEncTail
+		p[c+38] = 0x02
+		p[c+39] = 0x82
+		p[c+40] = colorEncTail
 	} else if isBW {
-		buf[c+38] = 0x00
-		buf[c+39] = 0x03
-		buf[c+40] = 0x00
+		p[c+38] = 0x00
+		p[c+39] = 0x03
+		p[c+40] = 0x00
 	} else {
-		buf[c+38] = 0x05
-		buf[c+39] = 0x82
-		buf[c+40] = colorEncTail
+		p[c+38] = 0x05
+		p[c+39] = 0x82
+		p[c+40] = colorEncTail
 	}
 
 	// +44-45, +48-49: paper size
-	binary.BigEndian.PutUint16(buf[c+44:c+46], dim.Width)
-	binary.BigEndian.PutUint16(buf[c+48:c+50], dim.Height)
+	p.putU16(c+44, dim.Width)
+	p.putU16(c+48, dim.Height)
 	// +50: constant
-	buf[c+50] = 0x04
+	p[c+50] = 0x04
 	// +54-56: constants
-	buf[c+54] = 0x01
-	buf[c+55] = 0x01
-	buf[c+56] = 0x01
+	p[c+54] = 0x01
+	p[c+55] = 0x01
+	p[c+56] = 0x01
 	// +57: BW flag
 	if isBW {
-		buf[c+57] = 0x01
+		p[c+57] = 0x01
 	}
 	// +60: BW density value
 	if isBW {
-		buf[c+60] = byte(6 + cfg.BWDensity)
+		p[c+60] = byte(6 + cfg.BWDensity)
 	}
 
 	// Back side params (only for full-auto duplex)
 	if configSize == 0x80 {
 		bc := c + 80
-		buf[bc+0] = 0x01
-		buf[bc+1] = 0x10
-		binary.BigEndian.PutUint16(buf[bc+2:bc+4], uint16(dpi))
-		binary.BigEndian.PutUint16(buf[bc+4:bc+6], uint16(dpi))
-		buf[bc+6] = 0x02
-		buf[bc+7] = 0x82
-		buf[bc+8] = 0x0B
-		binary.BigEndian.PutUint16(buf[bc+12:bc+14], dim.Width)
-		binary.BigEndian.PutUint16(buf[bc+16:bc+18], dim.Height)
-		buf[bc+18] = 0x04
-		buf[bc+22] = 0x01
-		buf[bc+23] = 0x01
-		buf[bc+24] = 0x01
+		p[bc+0] = 0x01
+		p[bc+1] = 0x10
+		p.putU16(bc+2, uint16(dpi))
+		p.putU16(bc+4, uint16(dpi))
+		p[bc+6] = 0x02
+		p[bc+7] = 0x82
+		p[bc+8] = 0x0B
+		p.putU16(bc+12, dim.Width)
+		p.putU16(bc+16, dim.Height)
+		p[bc+18] = 0x04
+		p[bc+22] = 0x01
+		p[bc+23] = 0x01
+		p[bc+24] = 0x01
 	}
 
-	return buf
+	return p
 }
 
 // --------------------------------------------------------------------------
@@ -511,19 +631,22 @@ func ParsePageHeader(data []byte) (*PageHeader, error) {
 	if len(data) < PageHeaderSize {
 		return nil, errors.New("page header too short")
 	}
-	if data[4] != Magic[0] || data[5] != Magic[1] || data[6] != Magic[2] || data[7] != Magic[3] {
+	var wire pageHeaderWire
+	if err := readWire(data[:PageHeaderSize], &wire); err != nil {
+		return nil, fmt.Errorf("page header: %w", err)
+	}
+	if wire.Magic != Magic {
 		return nil, errors.New("page header: bad magic")
 	}
 	return &PageHeader{
-		TotalLength: binary.BigEndian.Uint32(data[0:4]),
-		PageType:    binary.BigEndian.Uint32(data[12:16]),
-		Sheet:       data[40],
-		Side:        data[41],
+		TotalLength: wire.TotalLength,
+		PageType:    wire.PageType,
+		Sheet:       wire.Sheet,
+		Side:        wire.Side,
 	}, nil
 }
 
 // HasPaper checks the ADF status response for paper presence.
-// offsetBytes is the ADF status field from the GET_STATUS response.
 func HasPaper(adfStatus uint32) bool {
 	return adfStatus&ADFPaperMask != 0
 }
