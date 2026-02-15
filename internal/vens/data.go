@@ -1,0 +1,318 @@
+package vens
+
+import (
+	"encoding/binary"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"net"
+	"time"
+)
+
+// ScanError indicates a scanner-level error (no paper, hardware failure, etc.).
+type ScanError struct {
+	Msg string
+}
+
+func (e *ScanError) Error() string { return e.Msg }
+
+// Page holds a single scanned page image.
+type Page struct {
+	Sheet int    // Physical sheet index (0-based)
+	Side  int    // 0=front, 1=back
+	JPEG  []byte // Raw JPEG data
+}
+
+// DataChannel manages TCP data channel connections (port 53218).
+type DataChannel struct {
+	host  string
+	port  uint16
+	token [8]byte
+}
+
+// NewDataChannel creates a DataChannel for the given scanner address.
+func NewDataChannel(host string, port uint16, token [8]byte) *DataChannel {
+	return &DataChannel{host: host, port: port, token: token}
+}
+
+// connect opens a TCP connection and reads the welcome packet.
+func (d *DataChannel) connect() (net.Conn, error) {
+	addr := net.JoinHostPort(d.host, fmt.Sprintf("%d", d.port))
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("data connect: %w", err)
+	}
+
+	welcome := make([]byte, WelcomeSize)
+	if _, err := io.ReadFull(conn, welcome); err != nil {
+		conn.Close()
+		return nil, fmt.Errorf("data welcome: %w", err)
+	}
+	if err := ValidateWelcome(welcome); err != nil {
+		conn.Close()
+		return nil, err
+	}
+	slog.Debug("data channel connected", "addr", addr)
+	return conn, nil
+}
+
+// request opens a connection, sends data, reads a length-prefixed response, and closes.
+func (d *DataChannel) request(data []byte) ([]byte, error) {
+	conn, err := d.connect()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
+
+	if _, err := conn.Write(data); err != nil {
+		return nil, fmt.Errorf("data send: %w", err)
+	}
+	return readResponse(conn)
+}
+
+// readResponse reads a length-prefixed VENS response from a connection.
+func readResponse(r io.Reader) ([]byte, error) {
+	lenBuf := make([]byte, 4)
+	if _, err := io.ReadFull(r, lenBuf); err != nil {
+		return nil, fmt.Errorf("read response length: %w", err)
+	}
+	respLen := binary.BigEndian.Uint32(lenBuf)
+	if respLen < 4 {
+		return nil, fmt.Errorf("invalid response length: %d", respLen)
+	}
+	resp := make([]byte, respLen)
+	copy(resp[:4], lenBuf)
+	if _, err := io.ReadFull(r, resp[4:]); err != nil {
+		return nil, fmt.Errorf("read response body: %w", err)
+	}
+	return resp, nil
+}
+
+// GetDeviceInfo queries device identity (cmd=0x06, sub=0x12).
+func (d *DataChannel) GetDeviceInfo() ([]byte, error) {
+	resp, err := d.request(MarshalGetDeviceInfo(d.token))
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("device info", "bytes", len(resp))
+	return resp, nil
+}
+
+// GetScanParams queries scanner capabilities (cmd=0x06, sub=0x90).
+func (d *DataChannel) GetScanParams() ([]byte, error) {
+	return d.request(MarshalGetScanParams(d.token))
+}
+
+// GetScanSettings queries current scan settings (cmd=0x06, sub=0xD8).
+func (d *DataChannel) GetScanSettings() ([]byte, error) {
+	return d.request(MarshalGetScanSettings(d.token))
+}
+
+// SetConfig sends scanner config (cmd=0x08).
+func (d *DataChannel) SetConfig() ([]byte, error) {
+	return d.request(MarshalConfigCommand(d.token))
+}
+
+// RunScan executes a full scan session and returns all scanned pages.
+// The scan uses a single long-lived TCP connection.
+func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error) {
+	conn, err := d.connect()
+	if err != nil {
+		return nil, err
+	}
+	defer conn.Close()
+
+	// No overall deadline for scanning — individual reads have their own timeouts
+	sendAndRecv := func(data []byte) ([]byte, error) {
+		conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := conn.Write(data); err != nil {
+			return nil, err
+		}
+		return readResponse(conn)
+	}
+
+	// Step 1: Get current settings
+	resp, err := sendAndRecv(MarshalGetScanSettings(d.token))
+	if err != nil {
+		return nil, fmt.Errorf("get settings: %w", err)
+	}
+	slog.Debug("get settings response", "bytes", len(resp))
+
+	// Step 2: Write scan config
+	resp, err = sendAndRecv(MarshalScanConfig(d.token, cfg))
+	if err != nil {
+		return nil, fmt.Errorf("set scan config: %w", err)
+	}
+	slog.Debug("set config response", "bytes", len(resp))
+
+	// Step 3: Prepare scan
+	resp, err = sendAndRecv(MarshalPrepareScan(d.token))
+	if err != nil {
+		return nil, fmt.Errorf("prepare scan: %w", err)
+	}
+	slog.Debug("prepare scan response", "bytes", len(resp))
+
+	// Step 4: Check ADF paper status
+	resp, err = sendAndRecv(MarshalGetStatus(d.token))
+	if err != nil {
+		return nil, fmt.Errorf("get status: %w", err)
+	}
+	if len(resp) >= 60 {
+		adfStatus := binary.BigEndian.Uint32(resp[56:60])
+		slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", HasPaper(adfStatus))
+		if !HasPaper(adfStatus) {
+			return nil, &ScanError{Msg: "no paper in ADF"}
+		}
+	}
+
+	// Step 5: Wait for scan to start
+	slog.Info("waiting for scan to start...")
+	conn.SetDeadline(time.Now().Add(120 * time.Second)) // Long timeout for user interaction
+	if _, err := conn.Write(MarshalWaitForScan(d.token)); err != nil {
+		return nil, fmt.Errorf("wait for scan: %w", err)
+	}
+	resp, err = readResponse(conn)
+	if err != nil {
+		return nil, fmt.Errorf("wait for scan response: %w", err)
+	}
+	slog.Info("scan started")
+
+	// Step 6: Receive pages
+	var pages []Page
+	physicalSheet := 0
+	transferSheet := 0
+	sidesPerSheet := 1
+	if cfg.Duplex {
+		sidesPerSheet = 2
+	}
+
+	for {
+		for sideIdx := range sidesPerSheet {
+			jpeg, err := d.transferPageChunks(conn, transferSheet)
+			if err != nil {
+				return pages, fmt.Errorf("page transfer: %w", err)
+			}
+
+			page := Page{Sheet: physicalSheet, Side: sideIdx, JPEG: jpeg}
+			pages = append(pages, page)
+			sideName := "front"
+			if sideIdx == 1 {
+				sideName = "back"
+			}
+			slog.Info("page received", "sheet", physicalSheet, "side", sideName, "bytes", len(jpeg))
+			if onPage != nil {
+				onPage(page)
+			}
+
+			// Page metadata after each transfer
+			conn.SetDeadline(time.Now().Add(10 * time.Second))
+			if _, err := conn.Write(MarshalGetPageMetadata(d.token)); err != nil {
+				return pages, fmt.Errorf("page metadata send: %w", err)
+			}
+			if _, err := readResponse(conn); err != nil {
+				return pages, fmt.Errorf("page metadata recv: %w", err)
+			}
+
+			transferSheet++
+		}
+
+		// Check if more sheets available
+		conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := conn.Write(MarshalGetStatus(d.token)); err != nil {
+			return pages, fmt.Errorf("status check: %w", err)
+		}
+		statusResp, err := readResponse(conn)
+		if err != nil {
+			return pages, fmt.Errorf("status check recv: %w", err)
+		}
+
+		if len(statusResp) >= 48 {
+			adfStatus := binary.BigEndian.Uint32(statusResp[44:48])
+			slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", HasPaper(adfStatus))
+			if !HasPaper(adfStatus) {
+				break
+			}
+		} else {
+			break
+		}
+
+		// Wait for next sheet
+		conn.SetDeadline(time.Now().Add(30 * time.Second))
+		if _, err := conn.Write(MarshalWaitForScan(d.token)); err != nil {
+			return pages, fmt.Errorf("wait next sheet: %w", err)
+		}
+		resp, err := readResponse(conn)
+		if err != nil {
+			return pages, fmt.Errorf("wait next sheet recv: %w", err)
+		}
+		if len(resp) >= 16 {
+			waitStatus := binary.BigEndian.Uint32(resp[12:16])
+			if waitStatus != 0 {
+				slog.Info("scan complete", "waitStatus", waitStatus)
+				break
+			}
+		}
+
+		physicalSheet++
+	}
+
+	slog.Info("scan finished", "pages", len(pages))
+	return pages, nil
+}
+
+// transferPageChunks reads all JPEG chunks for a single page side.
+// The scanner sends data in 256KB chunks; page_type=2 marks the final chunk.
+func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int) ([]byte, error) {
+	pageBase := sheet << 8
+	var jpegBuf []byte
+
+	for chunk := 0; ; chunk++ {
+		pageNum := pageBase | chunk
+		conn.SetDeadline(time.Now().Add(30 * time.Second))
+
+		if _, err := conn.Write(MarshalPageTransfer(d.token, pageNum, sheet)); err != nil {
+			return nil, fmt.Errorf("chunk %d send: %w", chunk, err)
+		}
+
+		headerBuf := make([]byte, PageHeaderSize)
+		if _, err := io.ReadFull(conn, headerBuf); err != nil {
+			return nil, fmt.Errorf("chunk %d header: %w", chunk, err)
+		}
+		header, err := ParsePageHeader(headerBuf)
+		if err != nil {
+			return nil, fmt.Errorf("chunk %d parse: %w", chunk, err)
+		}
+
+		jpegSize := header.JPEGSize()
+		if jpegSize > 0 {
+			jpegChunk := make([]byte, jpegSize)
+			if _, err := io.ReadFull(conn, jpegChunk); err != nil {
+				return nil, fmt.Errorf("chunk %d data: %w", chunk, err)
+			}
+			jpegBuf = append(jpegBuf, jpegChunk...)
+		}
+
+		slog.Debug("chunk received", "pageNum", fmt.Sprintf("0x%04X", pageNum), "pageType", header.PageType, "bytes", jpegSize)
+
+		if header.PageType == PageTypeFinal {
+			break
+		}
+	}
+
+	return jpegBuf, nil
+}
+
+// CheckADFStatus queries the scanner ADF status and returns whether paper is present.
+func (d *DataChannel) CheckADFStatus() (bool, error) {
+	resp, err := d.request(MarshalGetStatus(d.token))
+	if err != nil {
+		return false, err
+	}
+	if len(resp) < 60 {
+		return false, errors.New("status response too short for ADF check")
+	}
+	adfStatus := binary.BigEndian.Uint32(resp[56:60])
+	return HasPaper(adfStatus), nil
+}
