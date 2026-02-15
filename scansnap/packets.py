@@ -32,6 +32,40 @@ class DataCommand(IntEnum):
     PAGE_TRANSFER = 0x0C
 
 
+class ColorMode(IntEnum):
+    AUTO = 0
+    COLOR = 1
+    GRAY = 2
+    BW = 3
+
+
+class Quality(IntEnum):
+    AUTO = 0
+    NORMAL = 1    # 150 DPI
+    FINE = 2      # 200 DPI
+    SUPERFINE = 3  # 300 DPI
+
+
+class PaperSize(IntEnum):
+    AUTO = 0
+    A4 = 1
+    A5 = 2
+    BUSINESS_CARD = 3
+    POSTCARD = 4
+
+
+# Paper dimensions in 1/1200 inch units (width, height)
+PAPER_DIMENSIONS: dict[int, tuple[int, int]] = {
+    PaperSize.AUTO: (0x28D0, 0x45A4),           # max scan area
+    PaperSize.A4: (0x26D0, 0x36D0),             # 210mm x 297mm
+    PaperSize.A5: (0x1B50, 0x26C0),             # 148mm x 210mm
+    PaperSize.BUSINESS_CARD: (0x28D0, 0x1274),  # auto-width x 100mm
+    PaperSize.POSTCARD: (0x1280, 0x1B50),        # 100mm x 148mm
+}
+
+_QUALITY_DPI = {Quality.AUTO: 0, Quality.NORMAL: 150, Quality.FINE: 200, Quality.SUPERFINE: 300}
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -368,51 +402,200 @@ class GetScanParamsRequest:
 
 @dataclass
 class ScanConfig:
-    """Scan configuration for SET command."""
-    resolution: int = 300
+    """Scan configuration for SET command.
+
+    Config byte mapping (offset relative to config data start at packet byte 64):
+      +1:     duplex (0x03=duplex, 0x01=simplex)
+      +2,+5:  auto_all flag (0x01 when color=auto AND quality=auto)
+      +4:     multi-feed detection (0xD0=on, 0x80=off)
+      +6:     multi-feed detection (0xC1=on, 0xC0=off)
+      +7:     0xc1=auto color+quality, 0x80=specific
+      +8:     blank page removal (0xE0=on, 0x80=off)
+      +10:    0xa0=auto quality, 0x80=specified
+      +11:    0xc0=bleed-through ON, 0x80=OFF
+      +33:    0x10=color/gray/auto, 0x40=BW
+      +34-37: resolution (uint16 x2, DPI; 0=auto)
+      +38-40: color encoding (05 82 0b=color, 02 82 0b=gray, 00 03 00=BW)
+      +44-45: paper width  (uint16, 1/1200 inch)
+      +48-49: paper height (uint16, 1/1200 inch)
+      +57:    BW flag (0x01=BW, 0x00=other)
+      +60:    BW density (value + 6)
+    """
+    color_mode: int = ColorMode.AUTO
+    quality: int = Quality.AUTO
     duplex: bool = True
-    color: bool = True
+    bleed_through: bool = True
+    paper_size: int = PaperSize.AUTO
+    bw_density: int = 0  # 0-10, only used when color_mode=BW
+    multi_feed: bool = True
+    blank_page_removal: bool = True
+
+    def describe(self) -> dict[str, str]:
+        """Return human-readable key-value settings."""
+        dpi = _QUALITY_DPI.get(self.quality, 0)
+        w, h = PAPER_DIMENSIONS.get(self.paper_size, PAPER_DIMENSIONS[PaperSize.AUTO])
+        w_mm = round(w / 1200 * 25.4, 1)
+        h_mm = round(h / 1200 * 25.4, 1)
+        return {
+            "color_mode": ColorMode(self.color_mode).name.lower(),
+            "quality": f"{Quality(self.quality).name.lower()} ({dpi} dpi)" if dpi else "auto",
+            "duplex": str(self.duplex).lower(),
+            "bleed_through": str(self.bleed_through).lower(),
+            "paper_size": f"{PaperSize(self.paper_size).name.lower()} ({w_mm}mm x {h_mm}mm)",
+            "bw_density": str(self.bw_density) if self.color_mode == ColorMode.BW else "n/a",
+            "multi_feed": str(self.multi_feed).lower(),
+            "blank_page_removal": str(self.blank_page_removal).lower(),
+        }
 
     def pack(self, token: bytes) -> bytes:
-        """Build the 192-byte scan config SET packet (cmd=0x06, sub=0xD4)."""
-        buf = bytearray(192)
+        """Build the scan config SET packet (cmd=0x06, sub=0xD4)."""
+        is_bw = self.color_mode == ColorMode.BW
+        is_gray = self.color_mode == ColorMode.GRAY
+        is_auto_color = self.color_mode == ColorMode.AUTO
+        is_auto_quality = self.quality == Quality.AUTO
+        is_full_auto = is_auto_color and is_auto_quality
+        dpi = _QUALITY_DPI.get(self.quality, 0)
+        w, h = PAPER_DIMENSIONS.get(self.paper_size, PAPER_DIMENSIONS[PaperSize.AUTO])
+
+        # Config data (80 bytes for simplex/shared, 128 for duplex with explicit back)
+        config_size = 0x50  # 80 bytes — sufficient for all modes
+        if self.duplex and is_full_auto:
+            config_size = 0x80  # 128 bytes — includes explicit back side params
+
+        total = 64 + config_size
+        buf = bytearray(total)
+
         # Standard data channel header (32 bytes)
-        struct.pack_into("!I", buf, 0, 192)
+        struct.pack_into("!I", buf, 0, total)
         buf[4:8] = MAGIC
         struct.pack_into("!I", buf, 8, 1)  # direction = client
         buf[16:24] = token
         struct.pack_into("!I", buf, 32, DataCommand.GET_SET)
 
         # GET_SET param header (offset 36-63)
-        struct.pack_into("!I", buf, 40, 0x00000080)  # config data size
+        struct.pack_into("!I", buf, 40, config_size)
         struct.pack_into("!I", buf, 48, 0xD4000000)  # sub-command 0xD4
-        struct.pack_into("!I", buf, 52, 0x80000000)  # config buffer size
+        struct.pack_into("!I", buf, 52, config_size << 24)
 
-        # Scan config data (offset 64-191, 128 bytes)
-        buf[65] = 0x03 if self.duplex else 0x01
-        buf[66:77] = b"\x01\x01\xD0\x01\xC1\xC1\xE0\xC8\x80\x80\x80"
+        # Config data starts at offset 64
+        c = 64  # config base offset
 
-        # Front side params (offset 95-120)
-        res = self.resolution
-        buf[95] = 0x30
-        buf[97] = 0x10
-        struct.pack_into("!HH", buf, 98, res, res)
-        buf[102:105] = b"\x05\x82\x0B"
-        buf[108:110] = b"\x28\xD0"
-        buf[112:115] = b"\x45\xA4\x04"
-        buf[118:121] = b"\x01\x01\x01"
+        # +1: duplex
+        buf[c + 1] = 0x03 if self.duplex else 0x01
+        # +2, +5: full auto flags
+        buf[c + 2] = 0x01 if is_full_auto else 0x00
+        buf[c + 5] = 0x01 if is_full_auto else 0x00
+        # +3: BW density flag
+        if is_bw and self.bw_density == 0:
+            buf[c + 3] = 0x02
+        elif is_full_auto:
+            buf[c + 3] = 0x01
+        # +4: multi-feed detection
+        buf[c + 4] = 0xD0 if self.multi_feed else 0x80
+        # +6: multi-feed detection
+        buf[c + 6] = 0xC1 if self.multi_feed else 0xC0
+        # +7: auto color flag
+        buf[c + 7] = 0xC1 if is_auto_color and is_auto_quality else 0x80
+        # +8: blank page removal
+        buf[c + 8] = 0xE0 if self.blank_page_removal else 0x80
+        # +9: constant
+        buf[c + 9] = 0xC8
+        # +10: auto quality
+        buf[c + 10] = 0xA0 if is_auto_quality else 0x80
+        # +11: bleed-through
+        buf[c + 11] = 0xC0 if self.bleed_through else 0x80
+        # +12: constant
+        buf[c + 12] = 0x80
 
-        # Back side params (offset 144-168)
-        if self.duplex:
-            buf[144] = 0x01
-            buf[145] = 0x10
-            struct.pack_into("!HH", buf, 146, res, res)
-            buf[150:153] = b"\x02\x82\x0B"
-            buf[156:158] = b"\x28\xD0"
-            buf[160:163] = b"\x45\xA4\x04"
-            buf[166:169] = b"\x01\x01\x01"
+        # Front side params
+        buf[c + 31] = 0x30
+        buf[c + 33] = 0x40 if is_bw else 0x10
+        struct.pack_into("!HH", buf, c + 34, dpi, dpi)
+        # +38-40: color encoding
+        # Third byte is 0x09 for small paper (POSTCARD), 0x0B otherwise
+        _color_enc_tail = b"\x09" if self.paper_size == PaperSize.POSTCARD else b"\x0B"
+        if is_gray:
+            buf[c + 38:c + 41] = b"\x02\x82" + _color_enc_tail
+        elif is_bw:
+            buf[c + 38:c + 41] = b"\x00\x03\x00"
+        else:
+            buf[c + 38:c + 41] = b"\x05\x82" + _color_enc_tail
+        # +44-45, +48-49: paper size
+        struct.pack_into("!H", buf, c + 44, w)
+        struct.pack_into("!H", buf, c + 48, h)
+        # +50: constant
+        buf[c + 50] = 0x04
+        # +54-56: constants
+        buf[c + 54:c + 57] = b"\x01\x01\x01"
+        # +57: BW flag
+        buf[c + 57] = 0x01 if is_bw else 0x00
+        # +60: BW density value
+        if is_bw:
+            buf[c + 60] = 0x06 + self.bw_density
+
+        # Back side params (only for full-auto duplex, explicit 128B config)
+        if config_size == 0x80:
+            bc = c + 80  # back config offset
+            buf[bc + 0] = 0x01
+            buf[bc + 1] = 0x10
+            struct.pack_into("!HH", buf, bc + 2, dpi, dpi)
+            buf[bc + 6:bc + 9] = b"\x02\x82\x0B"
+            struct.pack_into("!H", buf, bc + 12, w)
+            struct.pack_into("!H", buf, bc + 16, h)
+            buf[bc + 18] = 0x04
+            buf[bc + 22:bc + 25] = b"\x01\x01\x01"
 
         return bytes(buf)
+
+    @classmethod
+    def unpack(cls, data: bytes) -> ScanConfig:
+        """Decode ScanConfig from raw config bytes (starting at config data, packet offset 64)."""
+        duplex = data[1] == 0x03
+
+        # Quality from resolution
+        dpi = struct.unpack_from("!H", data, 34)[0]
+        quality = Quality.AUTO
+        for q, d in _QUALITY_DPI.items():
+            if d == dpi:
+                quality = q
+                break
+
+        # Color mode
+        color_enc = data[38:41]
+        if color_enc == b"\x02\x82\x0B":
+            color_mode = ColorMode.GRAY
+        elif color_enc == b"\x00\x03\x00":
+            color_mode = ColorMode.BW
+        elif data[7] == 0xC1 and data[10] == 0xA0:
+            color_mode = ColorMode.AUTO
+        else:
+            color_mode = ColorMode.COLOR
+
+        bleed_through = data[11] == 0xC0
+
+        # Paper size from dimensions
+        w = struct.unpack_from("!H", data, 44)[0]
+        h = struct.unpack_from("!H", data, 48)[0]
+        paper_size = PaperSize.AUTO
+        for ps, (pw, ph) in PAPER_DIMENSIONS.items():
+            if pw == w and ph == h:
+                paper_size = ps
+                break
+
+        bw_density = max(0, data[60] - 6) if color_mode == ColorMode.BW else 0
+        multi_feed = data[4] == 0xD0
+        blank_page_removal = data[8] == 0xE0
+
+        return cls(
+            color_mode=color_mode,
+            quality=quality,
+            duplex=duplex,
+            bleed_through=bleed_through,
+            paper_size=paper_size,
+            bw_density=bw_density,
+            multi_feed=multi_feed,
+            blank_page_removal=blank_page_removal,
+        )
 
 
 @dataclass

@@ -24,6 +24,10 @@ from scansnap.packets import (
 log = logging.getLogger(__name__)
 
 
+class ScanError(Exception):
+    """Scanner error (no paper, hardware failure, etc.)."""
+
+
 async def _read_exact(reader: asyncio.StreamReader, n: int) -> bytes:
     buf = bytearray()
     while len(buf) < n:
@@ -84,6 +88,22 @@ class DataChannel:
         req = GetScanSettingsRequest(token=self.token)
         return await self._request(req.pack())
 
+    async def read_all_settings(self) -> dict[str, bytes]:
+        """Query all settings-related endpoints and return raw responses."""
+        queries = [
+            ("device_info", self.get_device_info),
+            ("scan_params", self.get_scan_params),
+            ("scan_settings", self.get_scan_settings),
+        ]
+        results: dict[str, bytes] = {}
+        for name, fn in queries:
+            try:
+                results[name] = await fn()
+            except (ConnectionError, OSError) as e:
+                log.warning("Query %s failed: %s", name, e)
+                results[name] = b""
+        return results
+
     async def set_config(self) -> bytes:
         """Send scanner config (cmd=0x08)."""
         req = ConfigRequest(token=self.token)
@@ -126,11 +146,18 @@ class DataChannel:
             resp = await self._read_response(reader)
             log.debug("Prepare scan response: %d bytes", len(resp))
 
-            # Step 4: Get status
+            # Step 4: Get status — check for paper in ADF
             writer.write(GetStatusRequest(token=self.token).pack())
             await writer.drain()
             resp = await self._read_response(reader)
             log.debug("Status response: %d bytes", len(resp))
+
+            if len(resp) >= 60:
+                adf_status = struct.unpack_from("!I", resp, 56)[0]
+                has_paper = (adf_status & 0x00010000) != 0
+                log.info("ADF status: 0x%08X, paper=%s", adf_status, has_paper)
+                if not has_paper:
+                    raise ScanError("No paper in ADF")
 
             # Step 5: Wait for scan (blocks until button pressed or app trigger)
             log.info("Waiting for scan to start...")

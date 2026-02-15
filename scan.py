@@ -9,8 +9,9 @@ import logging
 import sys
 
 from scansnap.scanner import Scanner
+from scansnap.data import ScanError
 from scansnap.discovery import ScanSnapDiscovery
-from scansnap.packets import ScanConfig
+from scansnap.packets import ColorMode, PaperSize, Quality, ScanConfig
 
 
 async def cmd_discover(args: argparse.Namespace) -> None:
@@ -55,9 +56,14 @@ async def cmd_scan(args: argparse.Namespace) -> None:
     print("Connected!")
 
     config = ScanConfig(
-        resolution=args.dpi,
+        color_mode=ColorMode[args.color.upper()],
+        quality=Quality[args.quality.upper()],
         duplex=not args.simplex,
-        color=True,
+        bleed_through=args.bleed_through,
+        paper_size=PaperSize[args.paper_size.upper()],
+        bw_density=args.bw_density,
+        multi_feed=args.multi_feed,
+        blank_page_removal=args.blank_page_removal,
     )
 
     output_dir = args.output or "./scanned"
@@ -73,9 +79,13 @@ async def cmd_scan(args: argparse.Namespace) -> None:
         print(f"\nScan complete! {len(files)} page(s) saved:")
         for f in files:
             print(f"  {f}")
+    except ScanError as e:
+        print(f"\nScan error: {e}", file=sys.stderr)
+        sys.exit(1)
     finally:
         await scanner.disconnect()
         print("Disconnected.")
+
 
 
 def main() -> None:
@@ -100,16 +110,61 @@ def main() -> None:
 
     sub.add_parser("discover", help="Find scanners on the network")
 
+    def _add_scan_config_args(p: argparse.ArgumentParser) -> None:
+        """Add scan configuration arguments to a subparser."""
+        p.add_argument(
+            "--color", type=str, default="auto",
+            choices=["auto", "color", "gray", "bw"],
+            help="Color mode (default: auto)",
+        )
+        p.add_argument(
+            "--quality", type=str, default="auto",
+            choices=["auto", "normal", "fine", "superfine"],
+            help="Scan quality (default: auto)",
+        )
+        p.add_argument(
+            "--simplex", action="store_true", help="Single-sided scan",
+        )
+        p.add_argument(
+            "--bleed-through", action="store_true", default=True,
+            help="Enable bleed-through reduction (default: on)",
+        )
+        p.add_argument(
+            "--no-bleed-through", dest="bleed_through", action="store_false",
+            help="Disable bleed-through reduction",
+        )
+        p.add_argument(
+            "--paper-size", type=str, default="auto",
+            choices=["auto", "a4", "a5", "business_card", "postcard"],
+            help="Paper size (default: auto)",
+        )
+        p.add_argument(
+            "--bw-density", type=int, default=0,
+            help="B&W density 0-10 (default: 0, only for --color bw)",
+        )
+        p.add_argument(
+            "--multi-feed", action="store_true", default=True,
+            help="Enable multi-feed detection (default: on)",
+        )
+        p.add_argument(
+            "--no-multi-feed", dest="multi_feed", action="store_false",
+            help="Disable multi-feed detection",
+        )
+        p.add_argument(
+            "--blank-page-removal", action="store_true", default=True,
+            help="Enable blank page removal (default: on)",
+        )
+        p.add_argument(
+            "--no-blank-page-removal", dest="blank_page_removal",
+            action="store_false",
+            help="Disable blank page removal",
+        )
+
     scan_p = sub.add_parser("scan", help="Scan documents")
     scan_p.add_argument(
         "-o", "--output", type=str, default=None, help="Output directory",
     )
-    scan_p.add_argument(
-        "--dpi", type=int, default=300, help="Scan resolution (default: 300)",
-    )
-    scan_p.add_argument(
-        "--simplex", action="store_true", help="Single-sided scan",
-    )
+    _add_scan_config_args(scan_p)
     scan_p.add_argument(
         "--wait-button", action="store_true",
         help="Wait for physical button press before scanning",
