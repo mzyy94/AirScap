@@ -47,19 +47,24 @@ class Scanner:
         self._local_ip = self._discovery.local_ip
         self._connected = False
 
-    # Per-scanner base constants for identity derivation.
-    # identity = "".join(str(base[i] + ord(c)) for i, c in enumerate(password))
-    _IDENTITY_BASE = [123, 81, 128, 126, 78, 76, 89, 126, 89, 108]
+    # Identity derivation constants.
+    # PasswordManager.getEncryptionBytesFromString():
+    #   identity[i] = ord(password[i]) + ord(KEY[i]) + SHIFT
+    _IDENTITY_KEY = "pFusCANsNapFiPfu"
+    _IDENTITY_SHIFT = 11
 
     @classmethod
     def compute_identity(cls, password: str) -> str:
         """Compute pairing identity from a password."""
-        base = cls._IDENTITY_BASE
-        if len(password) > len(base):
+        key = cls._IDENTITY_KEY
+        if len(password) > len(key):
             raise ValueError(
-                f"Password too long (max {len(base)} chars, got {len(password)})"
+                f"Password too long (max {len(key)} chars, got {len(password)})"
             )
-        return "".join(str(base[i] + ord(c)) for i, c in enumerate(password))
+        return "".join(
+            str(ord(c) + ord(key[i]) + cls._IDENTITY_SHIFT)
+            for i, c in enumerate(password)
+        )
 
     @classmethod
     async def pair(
