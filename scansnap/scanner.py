@@ -47,6 +47,87 @@ class Scanner:
         self._local_ip = self._discovery.local_ip
         self._connected = False
 
+    # Per-scanner base constants for identity derivation.
+    # identity = "".join(str(base[i] + ord(c)) for i, c in enumerate(password))
+    _IDENTITY_BASE = [123, 81, 128, 126, 78, 76, 89, 126, 89, 108]
+
+    @classmethod
+    def compute_identity(cls, password: str) -> str:
+        """Compute pairing identity from a password."""
+        base = cls._IDENTITY_BASE
+        if len(password) > len(base):
+            raise ValueError(
+                f"Password too long (max {len(base)} chars, got {len(password)})"
+            )
+        return "".join(str(base[i] + ord(c)) for i, c in enumerate(password))
+
+    @classmethod
+    async def pair(
+        cls,
+        password: str | None = None,
+        identity: str | None = None,
+        scanner_ip: str | None = None,
+        timeout: float = 30,
+    ) -> tuple[Scanner, str]:
+        """Pair with a scanner using password or pre-computed identity.
+
+        Returns (scanner, identity) on success.
+        Raises ValueError if pairing is rejected.
+        """
+        if password is None and identity is None:
+            raise ValueError("Either password or identity must be provided")
+        if password is not None and identity is not None:
+            raise ValueError("Provide password or identity, not both")
+
+        if password is not None:
+            identity = cls.compute_identity(password)
+            log.info("Computed identity from password: %s", identity)
+
+        # Step 1: UDP discovery
+        discovery = ScanSnapDiscovery()
+        token = os.urandom(6) + b"\x00\x00"
+        info = await discovery.find_scanner(
+            scanner_ip=scanner_ip, token=token, timeout=timeout,
+        )
+        log.info("Discovered: %s (%s) at %s", info.name, info.serial, info.device_ip)
+
+        scanner = cls(
+            host=info.device_ip,
+            data_port=info.data_port,
+            control_port=info.control_port,
+            token=token,
+            identity=identity,
+        )
+        scanner._discovered = True
+        scanner._discovery = discovery
+
+        # Step 2: ConfigureRequest with identity — check acceptance
+        accepted = await scanner._control.try_configure(
+            token, scanner._local_ip, CLIENT_NOTIFY_PORT, identity=identity,
+        )
+        if not accepted:
+            await discovery.stop_heartbeat()
+            raise ValueError("Pairing rejected — wrong password")
+
+        # Step 3: Start heartbeats
+        await discovery.start_heartbeat(info.device_ip, token)
+        await asyncio.sleep(0.3)
+
+        # Step 4: Data channel setup (same as connect)
+        data_ch = DataChannel(info.device_ip, info.data_port, token)
+        await scanner._data_request_with_retry(data_ch.get_device_info)
+        await scanner._data_request_with_retry(data_ch.get_scan_params)
+        await scanner._data_request_with_retry(data_ch.set_config)
+
+        # Step 5: Control channel — status check + register
+        await scanner._control.check_status(token)
+        await scanner._control.register(token)
+
+        scanner._connected = True
+        log.info("Pairing complete! identity=%s", identity)
+
+        return scanner, identity
+
     @classmethod
     async def discover(
         cls,

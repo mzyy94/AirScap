@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import struct
 from datetime import datetime
 
 from scansnap.packets import (
@@ -96,6 +97,22 @@ class ControlSession:
         resp = await self._send_recv(req.pack())
         log.info("Configure response: %d bytes", len(resp))
         return resp
+
+    async def try_configure(
+        self,
+        token: bytes,
+        client_ip: str,
+        notify_port: int = CLIENT_NOTIFY_PORT,
+        identity: str = "",
+    ) -> bool:
+        """Send ConfigureRequest and return True if accepted, False if rejected."""
+        resp = await self.configure(token, client_ip, notify_port, identity)
+        status = struct.unpack_from("!i", resp, 8)[0]
+        if status == 0:
+            log.info("Pairing accepted")
+            return True
+        log.info("Pairing rejected (status=%d)", status)
+        return False
 
     async def check_status(self, token: bytes) -> StatusResponse:
         """Check connection status."""

@@ -42,6 +42,42 @@ async def cmd_discover(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+async def cmd_pair(args: argparse.Namespace) -> None:
+    """Pair with a scanner."""
+    password = getattr(args, "password", None)
+    identity = getattr(args, "pair_identity", None)
+
+    if not password and not identity:
+        print("Error: --password or --identity is required.", file=sys.stderr)
+        sys.exit(1)
+
+    if password:
+        print(f"Pairing with password: {password}")
+    else:
+        print(f"Pairing with identity: {identity}")
+
+    if not args.ip:
+        print("Discovering scanner...")
+
+    try:
+        scanner, ident = await Scanner.pair(
+            password=password,
+            identity=identity,
+            scanner_ip=args.ip,
+            timeout=args.timeout,
+        )
+        print(f"Paired!")
+        print(f"\n  Identity: {ident}")
+        print(f"\nUse: python scan.py --ip {scanner.host} --identity {ident} scan")
+        await scanner.disconnect()
+    except ValueError as e:
+        print(f"\n{e}", file=sys.stderr)
+        sys.exit(1)
+    except asyncio.TimeoutError:
+        print("No scanner found within timeout.", file=sys.stderr)
+        sys.exit(1)
+
+
 async def cmd_scan(args: argparse.Namespace) -> None:
     """Connect and scan."""
     if args.ip:
@@ -109,6 +145,16 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("discover", help="Find scanners on the network")
+
+    pair_p = sub.add_parser("pair", help="Pair with a scanner")
+    pair_group = pair_p.add_mutually_exclusive_group(required=True)
+    pair_group.add_argument(
+        "--password", type=str, help="Scanner password (e.g. 0700)",
+    )
+    pair_group.add_argument(
+        "--identity", type=str, dest="pair_identity",
+        help="Pre-computed identity string",
+    )
 
     def _add_scan_config_args(p: argparse.ArgumentParser) -> None:
         """Add scan configuration arguments to a subparser."""
@@ -179,6 +225,8 @@ def main() -> None:
 
     if args.command == "discover":
         asyncio.run(cmd_discover(args))
+    elif args.command == "pair":
+        asyncio.run(cmd_pair(args))
     elif args.command == "scan":
         asyncio.run(cmd_scan(args))
 
