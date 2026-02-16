@@ -183,6 +183,7 @@ class DataChannel:
                     )
                     jpeg_data = await self._transfer_page_chunks(
                         reader, writer, transfer_sheet,
+                        back_side=side_idx == 1,
                     )
                     side_name = "front" if side_idx == 0 else "back"
                     log.info(
@@ -245,6 +246,7 @@ class DataChannel:
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
         sheet: int,
+        back_side: bool = False,
     ) -> bytes:
         """Request page chunks until the full JPEG is received.
 
@@ -260,6 +262,7 @@ class DataChannel:
             page_num = page_base | chunk
             req = PageTransferRequest(
                 token=self.token, page_num=page_num, sheet=sheet,
+                back_side=back_side,
             )
             writer.write(req.pack())
             await writer.drain()

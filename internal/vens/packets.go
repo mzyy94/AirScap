@@ -425,10 +425,11 @@ func MarshalEndScan(token [8]byte) []byte {
 
 // MarshalPageTransfer builds cmd=0x0C for requesting scan page data.
 // pageNum = (sheet << 8) | chunkIndex
-func MarshalPageTransfer(token [8]byte, pageNum int, sheet int) []byte {
-	pageFlags := uint32(0x00000400) // even sheet
-	if sheet%2 == 1 {
-		pageFlags = 0x00800400 // odd sheet
+// backSide indicates whether this is the back side of a duplex scan.
+func MarshalPageTransfer(token [8]byte, pageNum int, backSide bool) []byte {
+	pageFlags := uint32(0x00000400) // front side
+	if backSide {
+		pageFlags = 0x00800400 // back side
 	}
 	p := newPacket(28)
 	p.putU32(0, 0x00040000) // 256KB buffer

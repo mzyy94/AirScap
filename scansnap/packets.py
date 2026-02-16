@@ -708,9 +708,10 @@ class PageTransferRequest:
     token: bytes = b"\x00" * 8
     page_num: int = 0   # (sheet << 8) | chunk_index
     sheet: int = 0
+    back_side: bool = False  # True for back side in duplex mode
 
     def pack(self) -> bytes:
-        page_flags = 0x00800400 if self.sheet % 2 == 1 else 0x00000400
+        page_flags = 0x00800400 if self.back_side else 0x00000400
         params = struct.pack(
             "!IIIIIII",
             0x00040000,  # buffer size: 256KB (must match capture for duplex)

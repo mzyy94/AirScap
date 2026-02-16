@@ -245,7 +245,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 				sideName = "back"
 			}
 			slog.Debug("transferring page", "sheet", physicalSheet, "side", sideName, "transferSheet", transferSheet)
-			jpeg, err := d.transferPageChunks(conn, transferSheet)
+			jpeg, err := d.transferPageChunks(conn, transferSheet, sideIdx == 1)
 			if err != nil {
 				return pages, fmt.Errorf("page transfer: %w", err)
 			}
@@ -319,7 +319,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 
 // transferPageChunks reads all JPEG chunks for a single page side.
 // The scanner sends data in 256KB chunks; page_type=2 marks the final chunk.
-func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int) ([]byte, error) {
+func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int, backSide bool) ([]byte, error) {
 	pageBase := sheet << 8
 	var jpegBuf []byte
 
@@ -327,7 +327,7 @@ func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int) ([]byte, erro
 		pageNum := pageBase | chunk
 		conn.SetDeadline(time.Now().Add(30 * time.Second))
 
-		if _, err := conn.Write(MarshalPageTransfer(d.token, pageNum, sheet)); err != nil {
+		if _, err := conn.Write(MarshalPageTransfer(d.token, pageNum, backSide)); err != nil {
 			return nil, fmt.Errorf("chunk %d send: %w", chunk, err)
 		}
 
