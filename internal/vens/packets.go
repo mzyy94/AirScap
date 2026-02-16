@@ -491,17 +491,10 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	} else {
 		p[c+1] = 0x01
 	}
-	// +2, +5: full auto flags
-	if isFullAuto {
-		p[c+2] = 0x01
-		p[c+5] = 0x01
-	}
-	// +3: BW density flag
-	if isBW && cfg.BWDensity == 0 {
-		p[c+3] = 0x02
-	} else if isFullAuto {
-		p[c+3] = 0x01
-	}
+	// +2, +3, +5: always 0x01
+	p[c+2] = 0x01
+	p[c+3] = 0x01
+	p[c+5] = 0x01
 	// +4: multi-feed detection
 	if cfg.MultiFeed {
 		p[c+4] = 0xD0

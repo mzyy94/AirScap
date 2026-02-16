@@ -522,10 +522,10 @@ sequenceDiagram
 | 相対オフセット | サイズ | フィールド | 値 | 説明 |
 |---------------|--------|-----------|-----|------|
 | +1 | 1 | Duplex | `0x03`=両面, `0x01`=片面 | |
-| +2 | 1 | Full Auto Flag | `0x01`=auto色+auto品質, `0x00`=その他 | +5 と同値 |
-| +3 | 1 | BW Density Flag | `0x02`=BW密度0, `0x01`=full auto, `0x00`=その他 | |
+| +2 | 1 | 定数 | `0x01` | |
+| +3 | 1 | 定数 | `0x01` | |
 | +4 | 1 | Multi-feed Detection | `0xD0`=ON, `0x80`=OFF | |
-| +5 | 1 | Full Auto Flag | `0x01`=auto色+auto品質, `0x00`=その他 | +2 と同値 |
+| +5 | 1 | 定数 | `0x01` | |
 | +6 | 1 | Multi-feed Detection | `0xC1`=ON, `0xC0`=OFF | +4 と連動 |
 | +7 | 1 | Auto Color+Quality | `0xC1`=auto色かつauto品質, `0x80`=指定あり | |
 | +8 | 1 | Blank Page Removal | `0xE0`=ON, `0x80`=OFF | |

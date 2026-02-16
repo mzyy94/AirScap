@@ -28,21 +28,21 @@ func NewESCLAdapter(s *Scanner) *ESCLAdapter {
 }
 
 func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
+	resolutions := []abstract.Resolution{
+		{XResolution: 150, YResolution: 150},
+		{XResolution: 200, YResolution: 200},
+		{XResolution: 300, YResolution: 300},
+	}
+
 	profile := abstract.SettingsProfile{
 		ColorModes: generic.MakeBitset(
-			abstract.ColorModeColor,
-			abstract.ColorModeMono,
 			abstract.ColorModeBinary,
+			abstract.ColorModeMono,
+			abstract.ColorModeColor,
 		),
-		Depths: generic.MakeBitset(abstract.ColorDepth8),
-		BinaryRenderings: generic.MakeBitset(
-			abstract.BinaryRenderingThreshold,
-		),
-		Resolutions: []abstract.Resolution{
-			{XResolution: 150, YResolution: 150},
-			{XResolution: 200, YResolution: 200},
-			{XResolution: 300, YResolution: 300},
-		},
+		Depths:           generic.MakeBitset(abstract.ColorDepth8),
+		BinaryRenderings: generic.MakeBitset(abstract.BinaryRenderingThreshold),
+		Resolutions:      resolutions,
 	}
 
 	adfCaps := &abstract.InputCapabilities{
@@ -78,7 +78,7 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		MakeAndModel:    name,
 		Manufacturer:    "Fujitsu",
 		SerialNumber:    serial,
-		DocumentFormats: []string{"image/jpeg", "application/pdf"},
+		DocumentFormats: []string{"image/jpeg", "image/tiff", "application/pdf"},
 		ADFCapacity:     50,
 		ADFSimplex:      adfCaps,
 		ADFDuplex:       adfCaps,
@@ -113,10 +113,10 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	// Scan session completed — ADF is likely exhausted
 	a.adfEmpty = true
 
-	// Collect JPEG data from pages
-	jpegs := make([][]byte, len(pages))
+	// Collect image data from pages
+	images := make([][]byte, len(pages))
 	for i, p := range pages {
-		jpegs[i] = p.JPEG
+		images[i] = p.JPEG
 	}
 
 	res := req.Resolution
@@ -128,10 +128,16 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		res = abstract.Resolution{XResolution: dpi, YResolution: dpi}
 	}
 
-	doc := &jpegDocument{res: res, pages: jpegs}
+	// BW mode returns TIFF G4 data from the scanner
+	isBW := cfg.ColorMode == vens.ColorBW
+	format := "image/jpeg"
+	if isBW {
+		format = "image/tiff"
+	}
+	doc := &scanDocument{res: res, pages: images, format: format}
 
 	// Apply filter for format conversion if needed
-	if req.DocumentFormat != "" && req.DocumentFormat != "image/jpeg" {
+	if req.DocumentFormat != "" && req.DocumentFormat != format {
 		return abstract.NewFilter(doc, abstract.FilterOptions{
 			OutputFormat: req.DocumentFormat,
 		}), nil
@@ -197,32 +203,34 @@ func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
 }
 
 // --------------------------------------------------------------------------
-// Document / DocumentFile implementation for JPEG pages
+// Document / DocumentFile implementation for scanned pages
 // --------------------------------------------------------------------------
 
-// jpegDocument wraps scanned JPEG pages as an abstract.Document.
-type jpegDocument struct {
-	res   abstract.Resolution
-	pages [][]byte
-	idx   int
+// scanDocument wraps scanned pages as an abstract.Document.
+type scanDocument struct {
+	res    abstract.Resolution
+	pages  [][]byte
+	format string // "image/jpeg" or "image/tiff"
+	idx    int
 }
 
-func (d *jpegDocument) Resolution() abstract.Resolution { return d.res }
+func (d *scanDocument) Resolution() abstract.Resolution { return d.res }
 
-func (d *jpegDocument) Next() (abstract.DocumentFile, error) {
+func (d *scanDocument) Next() (abstract.DocumentFile, error) {
 	if d.idx >= len(d.pages) {
 		return nil, io.EOF
 	}
-	f := &jpegFile{Reader: bytes.NewReader(d.pages[d.idx])}
+	f := &scanFile{Reader: bytes.NewReader(d.pages[d.idx]), format: d.format}
 	d.idx++
 	return f, nil
 }
 
-func (d *jpegDocument) Close() error { return nil }
+func (d *scanDocument) Close() error { return nil }
 
-// jpegFile wraps a single JPEG page as an abstract.DocumentFile.
-type jpegFile struct {
+// scanFile wraps a single scanned page as an abstract.DocumentFile.
+type scanFile struct {
 	*bytes.Reader
+	format string
 }
 
-func (f *jpegFile) Format() string { return "image/jpeg" }
+func (f *scanFile) Format() string { return f.format }

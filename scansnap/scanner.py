@@ -7,7 +7,7 @@ import logging
 import os
 from pathlib import Path
 
-from scansnap.packets import CLIENT_NOTIFY_PORT, ScanConfig
+from scansnap.packets import CLIENT_NOTIFY_PORT, ColorMode, ScanConfig
 from scansnap.data import DataChannel
 from scansnap.discovery import ScanSnapDiscovery
 from scansnap.session import ControlSession
@@ -249,7 +249,7 @@ class Scanner:
         config: ScanConfig | None = None,
         wait_for_button: bool = False,
     ) -> list[Path]:
-        """Scan and save JPEG files.
+        """Scan and save image files (JPEG or TIFF depending on color mode).
 
         If ``wait_for_button`` is True, waits for a physical button press
         before starting. Otherwise, triggers the scan directly (paper must
@@ -264,14 +264,17 @@ class Scanner:
         if config is None:
             config = ScanConfig()
 
-        async def on_page(sheet: int, side: int, jpeg: bytes) -> None:
-            if not jpeg:
+        is_bw = config.color_mode == ColorMode.BW
+
+        async def on_page(sheet: int, side: int, data: bytes) -> None:
+            if not data:
                 return
             side_name = "front" if side == 0 else "back"
-            filename = output / f"page_{sheet:03d}_{side_name}.jpg"
-            filename.write_bytes(jpeg)
+            ext = "tiff" if is_bw else "jpg"
+            filename = output / f"page_{sheet:03d}_{side_name}.{ext}"
+            filename.write_bytes(data)
             saved.append(filename)
-            log.info("Saved: %s (%d bytes)", filename, len(jpeg))
+            log.info("Saved: %s (%d bytes)", filename, len(data))
 
         if wait_for_button:
             log.info("Waiting for scan button press...")

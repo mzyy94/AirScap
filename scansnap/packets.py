@@ -482,14 +482,10 @@ class ScanConfig:
 
         # +1: duplex
         buf[c + 1] = 0x03 if self.duplex else 0x01
-        # +2, +5: full auto flags
-        buf[c + 2] = 0x01 if is_full_auto else 0x00
-        buf[c + 5] = 0x01 if is_full_auto else 0x00
-        # +3: BW density flag
-        if is_bw and self.bw_density == 0:
-            buf[c + 3] = 0x02
-        elif is_full_auto:
-            buf[c + 3] = 0x01
+        # +2, +3, +5: always 0x01
+        buf[c + 2] = 0x01
+        buf[c + 3] = 0x01
+        buf[c + 5] = 0x01
         # +4: multi-feed detection
         buf[c + 4] = 0xD0 if self.multi_feed else 0x80
         # +6: multi-feed detection

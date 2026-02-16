@@ -522,10 +522,10 @@ Front and back scan settings are stored in identical structures (front: +31~, ba
 | Relative Offset | Size | Field | Value | Description |
 |-----------------|------|-------|-------|-------------|
 | +1 | 1 | Duplex | `0x03`=duplex, `0x01`=simplex | |
-| +2 | 1 | Full Auto Flag | `0x01`=auto color+quality, `0x00`=other | Same as +5 |
-| +3 | 1 | BW Density Flag | `0x02`=BW density 0, `0x01`=full auto, `0x00`=other | |
+| +2 | 1 | Constant | `0x01` | |
+| +3 | 1 | Constant | `0x01` | |
 | +4 | 1 | Multi-feed Detection | `0xD0`=ON, `0x80`=OFF | |
-| +5 | 1 | Full Auto Flag | `0x01`=auto color+quality, `0x00`=other | Same as +2 |
+| +5 | 1 | Constant | `0x01` | |
 | +6 | 1 | Multi-feed Detection | `0xC1`=ON, `0xC0`=OFF | Linked with +4 |
 | +7 | 1 | Auto Color+Quality | `0xC1`=auto both, `0x80`=specified | |
 | +8 | 1 | Blank Page Removal | `0xE0`=ON, `0x80`=OFF | |
