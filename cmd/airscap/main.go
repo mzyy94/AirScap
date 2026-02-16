@@ -97,8 +97,8 @@ func main() {
 			OnScannerStatusResponse: func(_ *transport.ServerQuery, status *escl.ScannerStatus) *escl.ScannerStatus {
 				hasPaper, err := adapter.CheckADFStatus()
 				if err != nil {
-					slog.Debug("ADF status check failed", "err", err)
-					return nil
+					slog.Warn("ADF status check failed", "err", err)
+					return status // keep default ScannerAdfProcessing
 				}
 				if hasPaper {
 					status.ADFState = optional.New(escl.ScannerAdfLoaded)

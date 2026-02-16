@@ -15,8 +15,9 @@ import (
 
 // ESCLAdapter implements abstract.Scanner for ScanSnap hardware.
 type ESCLAdapter struct {
-	scanner *Scanner
-	caps    *abstract.ScannerCapabilities
+	scanner  *Scanner
+	caps     *abstract.ScannerCapabilities
+	adfEmpty bool // true after a scan session completes (ADF likely exhausted)
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
@@ -105,8 +106,12 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 
 	pages, err := a.scanner.Scan(cfg, nil)
 	if err != nil {
+		// Mark ADF as empty on scan error (likely no paper)
+		a.adfEmpty = true
 		return nil, err
 	}
+	// Scan session completed — ADF is likely exhausted
+	a.adfEmpty = true
 
 	// Collect JPEG data from pages
 	jpegs := make([][]byte, len(pages))
@@ -136,8 +141,18 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 }
 
 // CheckADFStatus queries the scanner for paper presence.
+// On error, falls back to cached state from the last scan session.
 func (a *ESCLAdapter) CheckADFStatus() (bool, error) {
-	return a.scanner.CheckADFStatus()
+	hasPaper, err := a.scanner.CheckADFStatus()
+	if err != nil {
+		if a.adfEmpty {
+			slog.Warn("ADF status check failed, using cached state (empty)", "err", err)
+			return false, nil
+		}
+		return false, err
+	}
+	a.adfEmpty = !hasPaper
+	return hasPaper, nil
 }
 
 // Close closes the scanner connection.
