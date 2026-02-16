@@ -13,6 +13,7 @@ import (
 func NewToken() [8]byte {
 	var token [8]byte
 	rand.Read(token[:6])
+	slog.Info("generated session token", "token", fmt.Sprintf("%x", token))
 	return token
 }
 
@@ -68,7 +69,7 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 	if _, err := conn.WriteToUDP(ssnrPacket, scannerAddr); err != nil {
 		return nil, fmt.Errorf("send ssNR discovery: %w", err)
 	}
-	slog.Debug("sent discovery", "target", targetIP)
+	slog.Info("sent discovery", "target", targetIP, "port", DiscoveryPort, "localIP", localIP, "vens_size", len(vensPacket), "ssnr_size", len(ssnrPacket))
 
 	// Also send to subnet broadcast if doing broadcast discovery
 	if opts.ScannerIP == "" {
@@ -78,6 +79,7 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 			subnetAddr := &net.UDPAddr{IP: net.ParseIP(subnetBroadcast), Port: DiscoveryPort}
 			conn.WriteToUDP(vensPacket, subnetAddr)
 			conn.WriteToUDP(ssnrPacket, subnetAddr)
+			slog.Info("sent subnet broadcast discovery", "broadcast", subnetBroadcast)
 		}
 	}
 
@@ -91,10 +93,11 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 		}
 
 		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-		n, _, err := conn.ReadFromUDP(buf)
+		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
 			if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
 				// Resend discovery on timeout
+				slog.Debug("discovery timeout, resending...")
 				conn.WriteToUDP(vensPacket, scannerAddr)
 				conn.WriteToUDP(ssnrPacket, scannerAddr)
 				continue
@@ -102,14 +105,17 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 			return nil, fmt.Errorf("read discovery: %w", err)
 		}
 
+		slog.Debug("received UDP packet", "from", remoteAddr, "bytes", n)
+
 		// Skip short heartbeat ACKs
 		if n < 132 {
+			slog.Debug("skipping short packet (heartbeat ACK?)", "bytes", n)
 			continue
 		}
 
 		info, err := ParseDeviceInfo(buf[:n])
 		if err != nil {
-			slog.Debug("ignored non-device-info packet", "error", err)
+			slog.Debug("ignored non-device-info packet", "error", err, "bytes", n)
 			continue
 		}
 

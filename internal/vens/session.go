@@ -2,6 +2,7 @@ package vens
 
 import (
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,6 +25,7 @@ func NewControlSession(host string, port uint16) *ControlSession {
 // connect opens a TCP connection and reads the welcome packet.
 func (s *ControlSession) connect() (net.Conn, error) {
 	addr := net.JoinHostPort(s.host, fmt.Sprintf("%d", s.port))
+	slog.Debug("control channel connecting", "addr", addr)
 	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("control connect: %w", err)
@@ -39,7 +41,7 @@ func (s *ControlSession) connect() (net.Conn, error) {
 		conn.Close()
 		return nil, err
 	}
-	slog.Debug("control welcome received", "addr", addr)
+	slog.Debug("received welcome from control channel", "addr", addr, "bytes", len(welcome), "hex", hex.EncodeToString(welcome))
 	return conn, nil
 }
 
@@ -51,6 +53,7 @@ func (s *ControlSession) sendRecv(data []byte) ([]byte, error) {
 	}
 	defer conn.Close()
 
+	slog.Debug("control send", "bytes", len(data), "hex", hex.EncodeToString(data))
 	if _, err := conn.Write(data); err != nil {
 		return nil, fmt.Errorf("control send: %w", err)
 	}
@@ -67,11 +70,13 @@ func (s *ControlSession) sendRecv(data []byte) ([]byte, error) {
 	if _, err := io.ReadFull(conn, resp[4:]); err != nil {
 		return nil, fmt.Errorf("control recv body: %w", err)
 	}
+	slog.Debug("control recv", "bytes", len(resp), "hex", hex.EncodeToString(resp))
 	return resp, nil
 }
 
 // Register registers this client with the scanner.
 func (s *ControlSession) Register(token [8]byte) error {
+	slog.Info("registering with scanner...")
 	conn, err := s.connect()
 	if err != nil {
 		return err
@@ -79,6 +84,7 @@ func (s *ControlSession) Register(token [8]byte) error {
 	defer conn.Close()
 
 	req := MarshalRegisterRequest(token, 1)
+	slog.Debug("register request", "bytes", len(req), "hex", hex.EncodeToString(req))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("register send: %w", err)
 	}
@@ -88,7 +94,7 @@ func (s *ControlSession) Register(token [8]byte) error {
 	if _, err := io.ReadFull(conn, ack); err != nil {
 		return fmt.Errorf("register recv: %w", err)
 	}
-	slog.Info("registered with scanner")
+	slog.Info("registration response", "bytes", len(ack), "hex", hex.EncodeToString(ack))
 	return nil
 }
 
@@ -96,13 +102,14 @@ func (s *ControlSession) Register(token [8]byte) error {
 // Returns true if the scanner accepted the pairing.
 func (s *ControlSession) Configure(token [8]byte, clientIP string, notifyPort uint16, identity string) (bool, error) {
 	req := MarshalConfigureRequest(token, clientIP, notifyPort, identity, time.Now())
-	slog.Info("configuring session", "ip", clientIP, "port", notifyPort)
+	slog.Info("configuring session", "ip", clientIP, "port", notifyPort, "identity_len", len(identity))
 
 	resp, err := s.sendRecv(req)
 	if err != nil {
 		return false, err
 	}
 
+	slog.Info("configure response", "bytes", len(resp))
 	status, err := ParseConfigureResponse(resp)
 	if err != nil {
 		return false, err
@@ -117,6 +124,7 @@ func (s *ControlSession) Configure(token [8]byte, clientIP string, notifyPort ui
 
 // CheckStatus queries the scanner's connection status.
 func (s *ControlSession) CheckStatus(token [8]byte) (uint32, error) {
+	slog.Info("checking scanner status...")
 	req := MarshalStatusRequest(token)
 	resp, err := s.sendRecv(req)
 	if err != nil {
@@ -126,12 +134,13 @@ func (s *ControlSession) CheckStatus(token [8]byte) (uint32, error) {
 	if err != nil {
 		return 0, err
 	}
-	slog.Debug("status check", "state", state)
+	slog.Info("status check", "state", state, "response_bytes", len(resp))
 	return state, nil
 }
 
 // Deregister removes this client from the scanner.
 func (s *ControlSession) Deregister(token [8]byte) error {
+	slog.Info("deregistering...")
 	conn, err := s.connect()
 	if err != nil {
 		return err
@@ -139,6 +148,7 @@ func (s *ControlSession) Deregister(token [8]byte) error {
 	defer conn.Close()
 
 	req := MarshalRegisterRequest(token, 1)
+	slog.Debug("deregister request", "bytes", len(req), "hex", hex.EncodeToString(req))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("deregister send: %w", err)
 	}
@@ -147,6 +157,6 @@ func (s *ControlSession) Deregister(token [8]byte) error {
 	if _, err := io.ReadFull(conn, ack); err != nil {
 		return fmt.Errorf("deregister recv: %w", err)
 	}
-	slog.Info("deregistered from scanner")
+	slog.Info("deregistration response", "bytes", len(ack), "hex", hex.EncodeToString(ack))
 	return nil
 }

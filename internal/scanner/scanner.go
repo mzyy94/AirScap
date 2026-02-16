@@ -26,6 +26,7 @@ type Scanner struct {
 func New(host string, dataPort, controlPort uint16, identity string) *Scanner {
 	var token [8]byte
 	rand.Read(token[:6])
+	slog.Info("scanner created", "host", host, "dataPort", dataPort, "controlPort", controlPort, "token", fmt.Sprintf("%x", token))
 	return &Scanner{
 		host:        host,
 		dataPort:    dataPort,
@@ -39,7 +40,7 @@ func New(host string, dataPort, controlPort uint16, identity string) *Scanner {
 // Connect establishes a session with the scanner: discovery, heartbeat, configure, register.
 func (s *Scanner) Connect(ctx context.Context) error {
 	// Step 1: UDP discovery to let the scanner know our token
-	slog.Info("discovering scanner", "host", s.host)
+	slog.Info("step 1/5: sending UDP discovery...", "host", s.host)
 	info, err := vens.FindScanner(ctx, vens.DiscoveryOptions{
 		ScannerIP: s.host,
 		Token:     s.token,
@@ -47,7 +48,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("discovery: %w", err)
 	}
-	slog.Info("discovered", "name", info.Name, "serial", info.Serial, "ip", info.DeviceIP)
+	slog.Info("discovery OK", "name", info.Name, "serial", info.Serial, "ip", info.DeviceIP, "dataPort", info.DataPort, "controlPort", info.ControlPort)
 
 	// Update ports from discovery response
 	if info.DataPort != 0 {
@@ -59,14 +60,17 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	// Step 2: Start heartbeats
+	slog.Info("step 2/5: starting heartbeat...")
 	hb, err := vens.StartHeartbeat(ctx, s.host, s.token, 0)
 	if err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
 	s.heartbeat = hb
 	time.Sleep(300 * time.Millisecond)
+	slog.Info("heartbeat started")
 
 	// Step 3: Configure session
+	slog.Info("step 3/5: configuring session...")
 	localIP := vens.GetLocalIP()
 	accepted, err := s.control.Configure(s.token, localIP, vens.ClientNotifyPort, s.identity)
 	if err != nil {
@@ -77,11 +81,13 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		s.heartbeat.Stop()
 		return fmt.Errorf("pairing rejected — wrong password/identity")
 	}
+	slog.Info("session configured")
 
 	// Step 4: Data channel setup
+	slog.Info("step 4/5: data channel setup...", "host", s.host, "port", s.dataPort)
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
 	if _, err := dataCh.GetDeviceInfo(); err != nil {
-		slog.Warn("get device info failed, retrying", "err", err)
+		slog.Warn("get device info failed, retrying in 2s", "err", err)
 		time.Sleep(2 * time.Second)
 		if _, err := dataCh.GetDeviceInfo(); err != nil {
 			s.heartbeat.Stop()
@@ -98,6 +104,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	// Step 5: Status check + register
+	slog.Info("step 5/5: status check + register...")
 	if _, err := s.control.CheckStatus(s.token); err != nil {
 		slog.Warn("status check failed", "err", err)
 	}
@@ -107,7 +114,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	s.connected = true
-	slog.Info("connected to scanner")
+	slog.Info("connected to scanner", "host", s.host, "dataPort", s.dataPort, "controlPort", s.controlPort)
 	return nil
 }
 
@@ -116,9 +123,11 @@ func (s *Scanner) Scan(cfg vens.ScanConfig, onPage func(vens.Page)) ([]vens.Page
 	if !s.connected {
 		return nil, fmt.Errorf("scanner not connected")
 	}
+	slog.Info("starting scan", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex, "paperSize", cfg.PaperSize)
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
 	pages, err := dataCh.RunScan(cfg, onPage)
 	if err != nil {
+		slog.Warn("scan error", "err", err, "pages_so_far", len(pages))
 		return pages, err
 	}
 	// Filter out empty pages
@@ -128,11 +137,13 @@ func (s *Scanner) Scan(cfg vens.ScanConfig, onPage func(vens.Page)) ([]vens.Page
 			result = append(result, p)
 		}
 	}
+	slog.Info("scan complete", "total_pages", len(pages), "non_empty", len(result))
 	return result, nil
 }
 
 // Disconnect deregisters from the scanner and stops heartbeat.
 func (s *Scanner) Disconnect() {
+	slog.Info("disconnecting from scanner...")
 	if s.control != nil {
 		if err := s.control.Deregister(s.token); err != nil {
 			slog.Warn("deregister failed", "err", err)
@@ -140,9 +151,10 @@ func (s *Scanner) Disconnect() {
 	}
 	if s.heartbeat != nil {
 		s.heartbeat.Stop()
+		slog.Info("heartbeat stopped")
 	}
 	s.connected = false
-	slog.Info("disconnected from scanner")
+	slog.Info("disconnected")
 }
 
 // Host returns the scanner's IP address.
