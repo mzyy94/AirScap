@@ -13,7 +13,7 @@ import (
 func NewToken() [8]byte {
 	var token [8]byte
 	rand.Read(token[:6])
-	slog.Info("generated session token", "token", fmt.Sprintf("%x", token))
+	slog.Debug("generated session token", "token", fmt.Sprintf("%x", token))
 	return token
 }
 
@@ -69,7 +69,7 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 	if _, err := conn.WriteToUDP(ssnrPacket, scannerAddr); err != nil {
 		return nil, fmt.Errorf("send ssNR discovery: %w", err)
 	}
-	slog.Info("sent discovery", "target", targetIP, "port", DiscoveryPort, "localIP", localIP, "vens_size", len(vensPacket), "ssnr_size", len(ssnrPacket))
+	slog.Debug("sent discovery", "target", targetIP, "port", DiscoveryPort, "localIP", localIP, "vens_size", len(vensPacket), "ssnr_size", len(ssnrPacket))
 
 	// Also send to subnet broadcast if doing broadcast discovery
 	if opts.ScannerIP == "" {
@@ -79,7 +79,7 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 			subnetAddr := &net.UDPAddr{IP: net.ParseIP(subnetBroadcast), Port: DiscoveryPort}
 			conn.WriteToUDP(vensPacket, subnetAddr)
 			conn.WriteToUDP(ssnrPacket, subnetAddr)
-			slog.Info("sent subnet broadcast discovery", "broadcast", subnetBroadcast)
+			slog.Debug("sent subnet broadcast discovery", "broadcast", subnetBroadcast)
 		}
 	}
 

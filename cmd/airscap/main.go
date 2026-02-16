@@ -21,7 +21,8 @@ import (
 )
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	logLevel := parseLogLevel(envStr("AIRSCAP_LOG_LEVEL", "info"))
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
 
 	// Parse configuration from environment variables
 	scannerIP := os.Getenv("AIRSCAP_SCANNER_IP")
@@ -158,6 +159,19 @@ func envInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+func parseLogLevel(s string) slog.Level {
+	switch strings.ToLower(s) {
+	case "debug":
+		return slog.LevelDebug
+	case "warn", "warning":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	default:
+		return slog.LevelInfo
+	}
 }
 
 // responseRecorder captures the status code for logging.

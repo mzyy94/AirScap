@@ -38,12 +38,12 @@ func StartHeartbeat(ctx context.Context, scannerIP string, token [8]byte, interv
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 
-		slog.Info("heartbeat started", "scanner", scannerIP, "interval", interval)
+		slog.Debug("heartbeat started", "scanner", scannerIP, "interval", interval)
 		for {
 			conn.WriteToUDP(packet, addr)
 			select {
 			case <-ctx.Done():
-				slog.Info("heartbeat stopped")
+				slog.Debug("heartbeat stopped")
 				return
 			case <-ticker.C:
 			}

@@ -26,7 +26,7 @@ type Scanner struct {
 func New(host string, dataPort, controlPort uint16, identity string) *Scanner {
 	var token [8]byte
 	rand.Read(token[:6])
-	slog.Info("scanner created", "host", host, "dataPort", dataPort, "controlPort", controlPort, "token", fmt.Sprintf("%x", token))
+	slog.Debug("scanner created", "host", host, "dataPort", dataPort, "controlPort", controlPort, "token", fmt.Sprintf("%x", token))
 	return &Scanner{
 		host:        host,
 		dataPort:    dataPort,
@@ -41,7 +41,7 @@ func New(host string, dataPort, controlPort uint16, identity string) *Scanner {
 // Matches the Python connect() flow — Register is NOT called here (only needed for initial pairing).
 func (s *Scanner) Connect(ctx context.Context) error {
 	// Step 1: UDP discovery to let the scanner know our token
-	slog.Info("step 1/5: sending UDP discovery...", "host", s.host)
+	slog.Debug("discovery...", "host", s.host)
 	info, err := vens.FindScanner(ctx, vens.DiscoveryOptions{
 		ScannerIP: s.host,
 		Token:     s.token,
@@ -49,7 +49,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("discovery: %w", err)
 	}
-	slog.Info("discovery OK", "name", info.Name, "serial", info.Serial, "ip", info.DeviceIP, "dataPort", info.DataPort, "controlPort", info.ControlPort)
+	slog.Debug("discovery OK", "name", info.Name, "serial", info.Serial, "ip", info.DeviceIP, "dataPort", info.DataPort, "controlPort", info.ControlPort)
 
 	// Update ports from discovery response
 	if info.DataPort != 0 {
@@ -61,17 +61,16 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	// Step 2: Start heartbeats
-	slog.Info("step 2/5: starting heartbeat...")
+	slog.Debug("starting heartbeat...")
 	hb, err := vens.StartHeartbeat(ctx, s.host, s.token, 0)
 	if err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
 	s.heartbeat = hb
 	time.Sleep(300 * time.Millisecond)
-	slog.Info("heartbeat started")
 
 	// Step 3: Configure session
-	slog.Info("step 3/5: configuring session...")
+	slog.Debug("configuring session...")
 	localIP := vens.GetLocalIP()
 	accepted, err := s.control.Configure(s.token, localIP, vens.ClientNotifyPort, s.identity)
 	if err != nil {
@@ -82,10 +81,9 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		s.heartbeat.Stop()
 		return fmt.Errorf("pairing rejected — wrong password/identity")
 	}
-	slog.Info("session configured")
 
 	// Step 4: Data channel setup (with status check interleaved, matching Python flow)
-	slog.Info("step 4/5: data channel setup...", "host", s.host, "port", s.dataPort)
+	slog.Debug("data channel setup...", "host", s.host, "port", s.dataPort)
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
 	if _, err := dataCh.GetDeviceInfo(); err != nil {
 		slog.Warn("get device info failed, retrying in 2s", "err", err)
@@ -97,7 +95,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	// Step 5: Status check (between data channel operations, matching Python flow)
-	slog.Info("step 5/5: status check...")
+	slog.Debug("status check...")
 	if _, err := s.control.CheckStatus(s.token); err != nil {
 		slog.Warn("status check failed", "err", err)
 	}
@@ -111,7 +109,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	s.connected = true
-	slog.Info("connected to scanner", "host", s.host, "dataPort", s.dataPort, "controlPort", s.controlPort)
+	slog.Info("connected to scanner", "host", s.host, "name", info.Name)
 	return nil
 }
 
@@ -140,7 +138,7 @@ func (s *Scanner) Scan(cfg vens.ScanConfig, onPage func(vens.Page)) ([]vens.Page
 
 // Disconnect deregisters from the scanner and stops heartbeat.
 func (s *Scanner) Disconnect() {
-	slog.Info("disconnecting from scanner...")
+	slog.Debug("disconnecting from scanner...")
 	if s.control != nil {
 		if err := s.control.Deregister(s.token); err != nil {
 			slog.Warn("deregister failed", "err", err)
@@ -148,10 +146,9 @@ func (s *Scanner) Disconnect() {
 	}
 	if s.heartbeat != nil {
 		s.heartbeat.Stop()
-		slog.Info("heartbeat stopped")
 	}
 	s.connected = false
-	slog.Info("disconnected")
+	slog.Info("disconnected from scanner")
 }
 
 // Host returns the scanner's IP address.

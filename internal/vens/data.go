@@ -100,52 +100,52 @@ func readResponse(r io.Reader) ([]byte, error) {
 
 // GetDeviceInfo queries device identity (cmd=0x06, sub=0x12).
 func (d *DataChannel) GetDeviceInfo() ([]byte, error) {
-	slog.Info("getting device info...")
+	slog.Debug("getting device info...")
 	resp, err := d.request(MarshalGetDeviceInfo(d.token))
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("device info OK", "bytes", len(resp))
+	slog.Debug("device info OK", "bytes", len(resp))
 	return resp, nil
 }
 
 // GetScanParams queries scanner capabilities (cmd=0x06, sub=0x90).
 func (d *DataChannel) GetScanParams() ([]byte, error) {
-	slog.Info("getting scan params...")
+	slog.Debug("getting scan params...")
 	resp, err := d.request(MarshalGetScanParams(d.token))
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("scan params OK", "bytes", len(resp))
+	slog.Debug("scan params OK", "bytes", len(resp))
 	return resp, nil
 }
 
 // GetScanSettings queries current scan settings (cmd=0x06, sub=0xD8).
 func (d *DataChannel) GetScanSettings() ([]byte, error) {
-	slog.Info("getting scan settings...")
+	slog.Debug("getting scan settings...")
 	resp, err := d.request(MarshalGetScanSettings(d.token))
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("scan settings OK", "bytes", len(resp))
+	slog.Debug("scan settings OK", "bytes", len(resp))
 	return resp, nil
 }
 
 // SetConfig sends scanner config (cmd=0x08).
 func (d *DataChannel) SetConfig() ([]byte, error) {
-	slog.Info("setting config...")
+	slog.Debug("setting config...")
 	resp, err := d.request(MarshalConfigCommand(d.token))
 	if err != nil {
 		return nil, err
 	}
-	slog.Info("config OK", "bytes", len(resp))
+	slog.Debug("config OK", "bytes", len(resp))
 	return resp, nil
 }
 
 // RunScan executes a full scan session and returns all scanned pages.
 // The scan uses a single long-lived TCP connection.
 func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error) {
-	slog.Info("starting scan session", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex, "paperSize", cfg.PaperSize)
+	slog.Debug("starting scan session", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex, "paperSize", cfg.PaperSize)
 	conn, err := d.connect()
 	if err != nil {
 		return nil, err
@@ -163,31 +163,31 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	}
 
 	// Step 1: Get current settings
-	slog.Info("step 1: getting current scan settings...")
+	slog.Debug("scan step 1: getting current scan settings...")
 	resp, err := sendAndRecv(MarshalGetScanSettings(d.token))
 	if err != nil {
 		return nil, fmt.Errorf("get settings: %w", err)
 	}
-	slog.Info("get settings response", "bytes", len(resp))
+	slog.Debug("get settings response", "bytes", len(resp))
 
 	// Step 2: Write scan config
-	slog.Info("step 2: writing scan config...")
+	slog.Debug("scan step 2: writing scan config...")
 	resp, err = sendAndRecv(MarshalScanConfig(d.token, cfg))
 	if err != nil {
 		return nil, fmt.Errorf("set scan config: %w", err)
 	}
-	slog.Info("set config response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
+	slog.Debug("set config response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
 
 	// Step 3: Prepare scan
-	slog.Info("step 3: preparing scan...")
+	slog.Debug("scan step 3: preparing scan...")
 	resp, err = sendAndRecv(MarshalPrepareScan(d.token))
 	if err != nil {
 		return nil, fmt.Errorf("prepare scan: %w", err)
 	}
-	slog.Info("prepare scan response", "bytes", len(resp))
+	slog.Debug("prepare scan response", "bytes", len(resp))
 
 	// Step 4: Check ADF paper status
-	slog.Info("step 4: checking ADF paper status...")
+	slog.Debug("scan step 4: checking ADF paper status...")
 	resp, err = sendAndRecv(MarshalGetStatus(d.token))
 	if err != nil {
 		return nil, fmt.Errorf("get status: %w", err)
@@ -202,7 +202,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	}
 
 	// Step 5: Wait for scan to start
-	slog.Info("step 5: waiting for scan to start...")
+	slog.Debug("scan step 5: waiting for scan to start...")
 	conn.SetDeadline(time.Now().Add(120 * time.Second)) // Long timeout for user interaction
 	if _, err := conn.Write(MarshalWaitForScan(d.token)); err != nil {
 		return nil, fmt.Errorf("wait for scan: %w", err)
@@ -214,7 +214,6 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	slog.Info("scan started!")
 
 	// Step 6: Receive pages
-	slog.Info("step 6: receiving pages...")
 	var pages []Page
 	physicalSheet := 0
 	transferSheet := 0
@@ -229,7 +228,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 			if sideIdx == 1 {
 				sideName = "back"
 			}
-			slog.Info("transferring page", "sheet", physicalSheet, "side", sideName, "transferSheet", transferSheet)
+			slog.Debug("transferring page", "sheet", physicalSheet, "side", sideName, "transferSheet", transferSheet)
 			jpeg, err := d.transferPageChunks(conn, transferSheet)
 			if err != nil {
 				return pages, fmt.Errorf("page transfer: %w", err)
@@ -257,7 +256,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		}
 
 		// Check if more sheets available
-		slog.Info("checking for more sheets...")
+		slog.Debug("checking for more sheets...")
 		conn.SetDeadline(time.Now().Add(10 * time.Second))
 		if _, err := conn.Write(MarshalGetStatus(d.token)); err != nil {
 			return pages, fmt.Errorf("status check: %w", err)
@@ -272,16 +271,16 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 			adfStatus := binary.BigEndian.Uint32(statusResp[44:48])
 			slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", HasPaper(adfStatus))
 			if !HasPaper(adfStatus) {
-				slog.Info("no more paper in ADF, ending scan")
+				slog.Debug("no more paper in ADF, ending scan")
 				break
 			}
 		} else {
-			slog.Info("short status response, ending scan", "bytes", len(statusResp))
+			slog.Debug("short status response, ending scan", "bytes", len(statusResp))
 			break
 		}
 
 		// Wait for next sheet
-		slog.Info("waiting for next sheet...")
+		slog.Debug("waiting for next sheet...")
 		conn.SetDeadline(time.Now().Add(30 * time.Second))
 		if _, err := conn.Write(MarshalWaitForScan(d.token)); err != nil {
 			return pages, fmt.Errorf("wait next sheet: %w", err)
@@ -356,7 +355,7 @@ func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int) ([]byte, erro
 
 // CheckADFStatus queries the scanner ADF status and returns whether paper is present.
 func (d *DataChannel) CheckADFStatus() (bool, error) {
-	slog.Info("checking ADF status...")
+	slog.Debug("checking ADF status...")
 	resp, err := d.request(MarshalGetStatus(d.token))
 	if err != nil {
 		return false, err
