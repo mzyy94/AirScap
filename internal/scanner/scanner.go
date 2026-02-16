@@ -37,7 +37,8 @@ func New(host string, dataPort, controlPort uint16, identity string) *Scanner {
 	}
 }
 
-// Connect establishes a session with the scanner: discovery, heartbeat, configure, register.
+// Connect establishes a session with the scanner: discovery, heartbeat, configure, data setup.
+// Matches the Python connect() flow — Register is NOT called here (only needed for initial pairing).
 func (s *Scanner) Connect(ctx context.Context) error {
 	// Step 1: UDP discovery to let the scanner know our token
 	slog.Info("step 1/5: sending UDP discovery...", "host", s.host)
@@ -83,7 +84,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 	slog.Info("session configured")
 
-	// Step 4: Data channel setup
+	// Step 4: Data channel setup (with status check interleaved, matching Python flow)
 	slog.Info("step 4/5: data channel setup...", "host", s.host, "port", s.dataPort)
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
 	if _, err := dataCh.GetDeviceInfo(); err != nil {
@@ -95,22 +96,18 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		}
 	}
 
+	// Step 5: Status check (between data channel operations, matching Python flow)
+	slog.Info("step 5/5: status check...")
+	if _, err := s.control.CheckStatus(s.token); err != nil {
+		slog.Warn("status check failed", "err", err)
+	}
+
 	if _, err := dataCh.GetScanParams(); err != nil {
 		slog.Warn("get scan params failed", "err", err)
 	}
 
 	if _, err := dataCh.SetConfig(); err != nil {
 		slog.Warn("set config failed", "err", err)
-	}
-
-	// Step 5: Status check + register
-	slog.Info("step 5/5: status check + register...")
-	if _, err := s.control.CheckStatus(s.token); err != nil {
-		slog.Warn("status check failed", "err", err)
-	}
-
-	if err := s.control.Register(s.token); err != nil {
-		slog.Warn("register failed", "err", err)
 	}
 
 	s.connected = true
