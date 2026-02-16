@@ -62,11 +62,21 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 	// Generate deterministic UUID from scanner host
 	deviceUUID := uuid.SHA1(uuid.NameSpaceDNS, "airscap."+a.scanner.Host())
 
+	name := a.scanner.Name()
+	if name == "" {
+		name = "ScanSnap"
+	}
+
+	serial := a.scanner.Serial()
+	if serial == "" {
+		serial = a.scanner.Host()
+	}
+
 	return &abstract.ScannerCapabilities{
 		UUID:            deviceUUID,
-		MakeAndModel:    "ScanSnap iX500",
+		MakeAndModel:    name,
 		Manufacturer:    "Fujitsu",
-		SerialNumber:    a.scanner.Host(),
+		SerialNumber:    serial,
 		DocumentFormats: []string{"image/jpeg", "application/pdf"},
 		ADFCapacity:     50,
 		ADFSimplex:      adfCaps,

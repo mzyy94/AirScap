@@ -31,7 +31,7 @@ func main() {
 	password := os.Getenv("AIRSCAP_PASSWORD")
 	passwordFile := os.Getenv("AIRSCAP_PASSWORD_FILE")
 	listenPort := envInt("AIRSCAP_LISTEN_PORT", 8080)
-	deviceName := envStr("AIRSCAP_DEVICE_NAME", "ScanSnap iX500")
+	deviceName := os.Getenv("AIRSCAP_DEVICE_NAME")
 
 	// Resolve password
 	if password == "" && passwordFile != "" {
@@ -77,6 +77,14 @@ func main() {
 		os.Exit(1)
 	}
 	defer sc.Disconnect()
+
+	// Use discovered device name if not explicitly set
+	if deviceName == "" {
+		deviceName = sc.Name()
+	}
+	if deviceName == "" {
+		deviceName = "ScanSnap"
+	}
 
 	// Create eSCL adapter
 	adapter := scanner.NewESCLAdapter(sc)

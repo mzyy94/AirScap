@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/mzyy94/airscap/internal/vens"
@@ -20,6 +21,8 @@ type Scanner struct {
 	control     *vens.ControlSession
 	heartbeat   *vens.Heartbeat
 	connected   bool
+	name        string
+	serial      string
 }
 
 // New creates a Scanner targeting the given host with a pre-computed identity.
@@ -109,7 +112,9 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	}
 
 	s.connected = true
-	slog.Info("connected to scanner", "host", s.host, "name", info.Name)
+	s.name = info.Name
+	s.serial = info.Serial
+	slog.Info("connected to scanner", "host", s.host, "name", info.Name, "serial", info.Serial)
 	return nil
 }
 
@@ -162,6 +167,12 @@ func (s *Scanner) CheckADFStatus() (bool, error) {
 
 // Host returns the scanner's IP address.
 func (s *Scanner) Host() string { return s.host }
+
+// Name returns the scanner's device name from discovery.
+func (s *Scanner) Name() string { return strings.TrimSpace(s.name) }
+
+// Serial returns the scanner's serial number from discovery.
+func (s *Scanner) Serial() string { return s.serial }
 
 // Connected returns whether the scanner session is active.
 func (s *Scanner) Connected() bool { return s.connected }
