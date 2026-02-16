@@ -434,6 +434,7 @@ A general-purpose command whose behavior varies by sub-command.
 | `0xD4` | Write scan settings | Color, quality, paper size, etc. |
 | `0xD5` | Prepare scan | Used within scan session |
 | `0xD8` | Read scan settings | Read current settings |
+| `0xD6` | End scan | End scan session (resets scanner state) |
 | `0xE0` | Wait for scan start | Blocks until button press or trigger |
 
 #### 5.3.1 Get Device Info (sub=0x12)
@@ -607,7 +608,17 @@ Retrieves page details after a page transfer. Sent with different parameters tha
 | 44 | 4 | Total Image Size | Total size of the transferred page pair |
 | 48 | 10 | Reserved | Zero-filled |
 
-#### 5.3.6 Wait for Scan Start (sub=0xE0)
+#### 5.3.6 End Scan (sub=0xD6)
+
+Sent at the end of a scan session. Resets the scanner's internal state so it can accept the next scan. Must always be sent as post-scan cleanup (on the same TCP connection within the scan session).
+
+**Request (64 bytes):**
+
+Standard GET_SET format. Sub-command = `0xD6`.
+
+**Response (40 bytes):** Standard empty response.
+
+#### 5.3.7 Wait for Scan Start (sub=0xE0)
 
 A blocking command that waits for a scan to start. Returns a response after a button press or app trigger.
 
@@ -746,6 +757,10 @@ sequenceDiagram
         C->>S: GET_SET(sub=0xE0) Wait for next sheet
         S->>C: status=0: continue / status≠0: done
     end
+
+    Note over C,S: End Scan Session
+    C->>S: GET_SET(sub=0xD6) End scan
+    S->>C: ACK
 ```
 
 ### 6.2 PAGE_TRANSFER Command (0x0C)
@@ -879,6 +894,7 @@ The following protocol details remain uncertain:
 1. **Page Flags** — The reason for alternating between `0x00800400` / `0x00000400` on odd/even sheets (likely related to feed direction)
 2. **Error handling** — Protocol behavior during paper jams or multi-feed detection. No-paper condition is detected via WAIT_FOR_SCAN response status=2; other error notifications are undefined
 3. **Config Data constants** — The exact meaning of constant bytes at +9: `0xC8`, +12: `0x80`, +31: `0x30`, +50: `0x04`, +54~+56: `0x010101`
+4. **CONFIG Sub-config value** — The exact meaning of `0x05010000` is unknown
 
 ---
 

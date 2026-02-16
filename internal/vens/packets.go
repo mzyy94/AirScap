@@ -416,6 +416,13 @@ func MarshalWaitForScan(token [8]byte) []byte {
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
+// MarshalEndScan builds cmd=0x06, sub=0xD6 (end scan session).
+func MarshalEndScan(token [8]byte) []byte {
+	p := newPacket(28)
+	p.putU32(12, 0xD6000000)
+	return marshalDataRequest(token, CmdGetSet, p)
+}
+
 // MarshalPageTransfer builds cmd=0x0C for requesting scan page data.
 // pageNum = (sheet << 8) | chunkIndex
 func MarshalPageTransfer(token [8]byte, pageNum int, sheet int) []byte {

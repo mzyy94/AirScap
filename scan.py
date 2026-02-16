@@ -172,12 +172,8 @@ def main() -> None:
             "--simplex", action="store_true", help="Single-sided scan",
         )
         p.add_argument(
-            "--bleed-through", action="store_true", default=True,
-            help="Enable bleed-through reduction (default: on)",
-        )
-        p.add_argument(
-            "--no-bleed-through", dest="bleed_through", action="store_false",
-            help="Disable bleed-through reduction",
+            "--bleed-through", action="store_true", default=False,
+            help="Enable bleed-through reduction (default: off)",
         )
         p.add_argument(
             "--paper-size", type=str, default="auto",

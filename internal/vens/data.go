@@ -150,7 +150,18 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	if err != nil {
 		return nil, err
 	}
-	defer conn.Close()
+	defer func() {
+		// End scan session (sub=0xD6) — required to reset scanner state
+		conn.SetDeadline(time.Now().Add(5 * time.Second))
+		if _, err := conn.Write(MarshalEndScan(d.token)); err != nil {
+			slog.Debug("end scan send failed", "err", err)
+		} else if _, err := readResponse(conn); err != nil {
+			slog.Debug("end scan response failed", "err", err)
+		} else {
+			slog.Debug("end scan session OK")
+		}
+		conn.Close()
+	}()
 
 	// No overall deadline for scanning — individual reads have their own timeouts
 	sendAndRecv := func(data []byte) ([]byte, error) {

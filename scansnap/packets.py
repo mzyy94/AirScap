@@ -424,7 +424,7 @@ class ScanConfig:
     color_mode: int = ColorMode.AUTO
     quality: int = Quality.AUTO
     duplex: bool = True
-    bleed_through: bool = True
+    bleed_through: bool = False
     paper_size: int = PaperSize.AUTO
     bw_density: int = 0  # 0-10, only used when color_mode=BW
     multi_feed: bool = True

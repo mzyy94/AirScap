@@ -72,7 +72,7 @@ func DefaultScanConfig() ScanConfig {
 		ColorMode:        ColorAuto,
 		Quality:          QualityAuto,
 		Duplex:           true,
-		BleedThrough:     true,
+		BleedThrough:     false,
 		PaperSize:        PaperAuto,
 		MultiFeed:        true,
 		BlankPageRemoval: true,
