@@ -93,7 +93,7 @@ func main() {
 	addr := fmt.Sprintf(":%d", listenPort)
 	httpServer := &http.Server{
 		Addr:    addr,
-		Handler: mux,
+		Handler: logMiddleware(mux),
 	}
 
 	// Start mDNS advertisement
@@ -158,4 +158,30 @@ func envInt(key string, fallback int) int {
 		}
 	}
 	return fallback
+}
+
+// responseRecorder captures the status code for logging.
+type responseRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *responseRecorder) WriteHeader(code int) {
+	r.status = code
+	r.ResponseWriter.WriteHeader(code)
+}
+
+func logMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &responseRecorder{ResponseWriter: w, status: 200}
+		start := time.Now()
+		next.ServeHTTP(rec, r)
+		slog.Info("http",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"remote", r.RemoteAddr,
+			"duration", time.Since(start).Round(time.Millisecond),
+		)
+	})
 }
