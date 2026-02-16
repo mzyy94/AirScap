@@ -1,0 +1,20 @@
+[Unit]
+Description=ScanSnap eSCL Bridge Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/airscap
+EnvironmentFile=/etc/airscap/env
+Restart=on-failure
+RestartSec=10
+
+# Hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
