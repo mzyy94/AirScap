@@ -78,14 +78,17 @@ func main() {
 	// Create eSCL adapter
 	adapter := scanner.NewESCLAdapter(sc)
 
-	// Create eSCL HTTP server
+	// Create eSCL HTTP server (BasePath="" so it handles paths directly)
 	esclServer := escl.NewAbstractServer(escl.AbstractServerOptions{
 		Scanner:  adapter,
-		BasePath: "/eSCL",
+		BasePath: "",
 	})
 
 	mux := http.NewServeMux()
-	mux.Handle("/eSCL/", esclServer)
+	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
+	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
+	// Also serve at root for clients that ignore rs (sane-escl)
+	mux.Handle("/", esclServer)
 
 	addr := fmt.Sprintf(":%d", listenPort)
 	httpServer := &http.Server{
