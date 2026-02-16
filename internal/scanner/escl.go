@@ -8,6 +8,7 @@ import (
 
 	"github.com/OpenPrinting/go-mfp/abstract"
 	"github.com/OpenPrinting/go-mfp/util/generic"
+	"github.com/OpenPrinting/go-mfp/util/uuid"
 
 	"github.com/mzyy94/airscap/internal/vens"
 )
@@ -58,9 +59,14 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		Profiles: []abstract.SettingsProfile{profile},
 	}
 
+	// Generate deterministic UUID from scanner host
+	deviceUUID := uuid.SHA1(uuid.NameSpaceDNS, "airscap."+a.scanner.Host())
+
 	return &abstract.ScannerCapabilities{
+		UUID:            deviceUUID,
 		MakeAndModel:    "ScanSnap iX500",
 		Manufacturer:    "Fujitsu",
+		SerialNumber:    a.scanner.Host(),
 		DocumentFormats: []string{"image/jpeg", "application/pdf"},
 		ADFCapacity:     50,
 		ADFSimplex:      adfCaps,
