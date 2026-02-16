@@ -186,17 +186,17 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	}
 	slog.Debug("prepare scan response", "bytes", len(resp))
 
-	// Step 4: Check ADF paper status
-	slog.Debug("scan step 4: checking ADF paper status...")
+	// Step 4: Get status — check for paper in ADF
+	slog.Debug("scan step 4: getting status...")
 	resp, err = sendAndRecv(MarshalGetStatus(d.token))
 	if err != nil {
 		return nil, fmt.Errorf("get status: %w", err)
 	}
 	slog.Debug("status response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
-	if len(resp) >= 48 {
-		adfStatus := binary.BigEndian.Uint32(resp[44:48])
-		slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", HasPaper(adfStatus))
-		if !HasPaper(adfStatus) {
+	if len(resp) >= 44 {
+		scanStatus := binary.BigEndian.Uint32(resp[40:44])
+		slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
+		if scanStatus&0x80 != 0 {
 			return nil, &ScanError{Msg: "no paper in ADF"}
 		}
 	}
@@ -211,7 +211,12 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	if err != nil {
 		return nil, fmt.Errorf("wait for scan response: %w", err)
 	}
-	slog.Info("scan started!")
+	if len(resp) >= 16 {
+		waitStatus := binary.BigEndian.Uint32(resp[12:16])
+		slog.Info("scan started", "waitStatus", waitStatus)
+	} else {
+		slog.Info("scan started!")
+	}
 
 	// Step 6: Receive pages
 	var pages []Page
@@ -255,8 +260,8 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 			transferSheet++
 		}
 
-		// Check if more sheets available
-		slog.Debug("checking for more sheets...")
+		// Check status
+		slog.Debug("checking status...")
 		conn.SetDeadline(time.Now().Add(10 * time.Second))
 		if _, err := conn.Write(MarshalGetStatus(d.token)); err != nil {
 			return pages, fmt.Errorf("status check: %w", err)
@@ -265,18 +270,9 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		if err != nil {
 			return pages, fmt.Errorf("status check recv: %w", err)
 		}
-		slog.Debug("status response", "bytes", len(statusResp))
-
-		if len(statusResp) >= 48 {
-			adfStatus := binary.BigEndian.Uint32(statusResp[44:48])
-			slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", HasPaper(adfStatus))
-			if !HasPaper(adfStatus) {
-				slog.Debug("no more paper in ADF, ending scan")
-				break
-			}
-		} else {
-			slog.Debug("short status response, ending scan", "bytes", len(statusResp))
-			break
+		if len(statusResp) >= 44 {
+			scanStatus := binary.BigEndian.Uint32(statusResp[40:44])
+			slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
 		}
 
 		// Wait for next sheet
@@ -360,11 +356,11 @@ func (d *DataChannel) CheckADFStatus() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if len(resp) < 48 {
+	if len(resp) < 44 {
 		return false, errors.New("status response too short for ADF check")
 	}
-	adfStatus := binary.BigEndian.Uint32(resp[44:48])
-	hasPaper := HasPaper(adfStatus)
-	slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", hasPaper)
+	scanStatus := binary.BigEndian.Uint32(resp[40:44])
+	hasPaper := scanStatus&0x80 == 0
+	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", hasPaper)
 	return hasPaper, nil
 }

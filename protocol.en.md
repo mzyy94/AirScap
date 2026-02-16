@@ -55,7 +55,7 @@ sequenceDiagram
         C->>S: PAGE_TRANSFER (cmd=0x0C)
         S->>C: Page header + JPEG chunk
         C->>S: Get page metadata (GET_SET sub=0x12)
-        C->>S: Check ADF status (GET_STATUS cmd=0x0A)
+        C->>S: Check status (GET_STATUS cmd=0x0A)
     end
 
     Note over S,C: Phase 5: Disconnect
@@ -607,11 +607,40 @@ Retrieves page details after a page transfer. Sent with different parameters tha
 | 44 | 4 | Total Image Size | Total size of the transferred page pair |
 | 48 | 10 | Reserved | Zero-filled |
 
+#### 5.3.6 Wait for Scan Start (sub=0xE0)
+
+A blocking command that waits for a scan to start. Returns a response after a button press or app trigger.
+
+Used both before the initial scan and after each page transfer. The response status code determines paper presence and whether scanning should continue.
+
+**Request (64 bytes):**
+
+Standard GET_SET format. Sub-command = `0xE0`.
+
+**Response (40 bytes):**
+
+| Offset | Size | Field | Description |
+|--------|------|-------|-------------|
+| 0 | 4 | Length | `0x00000028` (40) |
+| 4 | 4 | Magic | "VENS" |
+| 8 | 4 | Reserved | `0x00000000` |
+| 12 | 4 | Status | Status code |
+| 16 | 24 | Reserved | Zero-filled |
+
+**Status codes:**
+
+| Value | Meaning |
+|-------|---------|
+| `0x00000000` | Success — scan started / next page ready |
+| `0x00000002` | Done — no paper or scan complete |
+
+When no paper is present, the client generates an error and aborts (no protocol-level error notification exists).
+
 ### 5.4 GET_STATUS Command (0x0A)
 
-Checks scan status. Used to determine ADF (Automatic Document Feeder) paper presence.
+Checks scan status. Retrieves scan progress state and device state flags.
 
-ADF status is checked at offset 44. The same offset is used for both pre-scan check and in-loop check.
+Paper presence is determined by the Scan Status field at offset 40. When bit `0x80` is set, no paper is loaded in the ADF (or the scanner is not ready).
 
 **Request (64 bytes):**
 
@@ -628,27 +657,21 @@ ADF status is checked at offset 44. The same offset is used for both pre-scan ch
 |--------|------|-------|-------------|
 | 0 | 4 | Length | `0x00000048` (72) |
 | 4 | 36 | Header | Zero-filled |
-| 40 | 4 | Scan Status | Scan progress state |
-| 44 | 4 | ADF Status | Paper presence (determined by bitmask) |
+| 40 | 4 | Scan Status | `0x00000000`=paper present (ready), `0x00000080`=no paper (not ready) |
+| 44 | 4 | Reserved | Fixed value (not reliable for paper detection) |
 | 48 | 8 | Reserved | |
-| 56 | 4 | Device Flags | Device state flags (not used for paper detection) |
+| 56 | 4 | Device Flags | Device state flags |
 | 60 | 12 | Reserved | Zero-filled |
 
-**ADF Paper Detection:**
-
-Paper presence is determined by bitmask `0x00010000`:
+**Paper Detection:**
 
 ```
-has_paper = (adf_status & 0x00010000) != 0
+has_paper = (scan_status & 0x80) == 0
 ```
 
-| Paper present example | No paper example |
-|----------------------|-----------------|
-| `0x00010000` | `0x00000000` |
+When no paper is present, the client should abort before sending WAIT_FOR_SCAN.
 
-When no paper is detected, the client generates an error and aborts (no protocol-level error code exists).
-
-> **Note:** The value at offset 56 (e.g., `0xC0000000`) represents device state flags, and the `0x00010000` bit may not be set even when paper is loaded. Always use offset 44 for paper detection.
+> **Note:** Offset 44 may return the same value (`0x00010000`) regardless of paper presence. Use Scan Status at offset 40 for paper detection.
 
 ### 5.5 CONFIG Command (0x08)
 
@@ -689,12 +712,12 @@ sequenceDiagram
     Note over C,S: Scan Preparation
     C->>S: GET_SET(sub=0xD5) Prepare scan
     S->>C: ACK
-    C->>S: GET_STATUS(0x0A) Paper check
-    S->>C: ADF status
+    C->>S: GET_STATUS(0x0A) Status check
+    S->>C: Status response
 
     Note over C,S: Wait for Scan Start
     C->>S: GET_SET(sub=0xE0) Wait for scan start
-    S->>C: ACK (after button press or trigger)
+    S->>C: status=0: started / status=2: no paper
 
     Note over C,S: Page Data Transfer Loop
     loop Per physical sheet
@@ -718,12 +741,10 @@ sequenceDiagram
                 S->>C: Metadata (58B)
             end
         end
-        C->>S: GET_STATUS(0x0A) Check for next sheet
-        S->>C: ADF status
-        opt Paper present
-            C->>S: GET_SET(sub=0xE0) Wait for next sheet
-            S->>C: ACK (status=0: continue, status≠0: done)
-        end
+        C->>S: GET_STATUS(0x0A) Status check
+        S->>C: Status response
+        C->>S: GET_SET(sub=0xE0) Wait for next sheet
+        S->>C: status=0: continue / status≠0: done
     end
 ```
 
@@ -832,11 +853,11 @@ stateDiagram-v2
     Register --> Idle
 
     Idle --> ScanSession: Start scan
-    ScanSession --> PaperCheck: ADF paper check
-    PaperCheck --> Error: No paper
-    PaperCheck --> Scanning: Paper present
+    ScanSession --> WaitForScan: WAIT_FOR_SCAN (sub=0xE0)
+    WaitForScan --> Error: status=2 (no paper)
+    WaitForScan --> Scanning: status=0 (started)
     Scanning --> PageTransfer: Chunked transfer
-    PageTransfer --> Scanning: Next page
+    PageTransfer --> WaitForScan: Check next page
     PageTransfer --> Idle: All pages done
 
     Idle --> Disconnecting: Disconnect request
@@ -856,7 +877,7 @@ The session token is 8 bytes: 6 random bytes generated by the client followed by
 The following protocol details remain uncertain:
 
 1. **Page Flags** — The reason for alternating between `0x00800400` / `0x00000400` on odd/even sheets (likely related to feed direction)
-2. **Error handling** — Protocol behavior during paper jams or multi-feed detection. No-paper condition is determined client-side via the ADF status bitmask; no scanner-initiated error notification is defined
+2. **Error handling** — Protocol behavior during paper jams or multi-feed detection. No-paper condition is detected via WAIT_FOR_SCAN response status=2; other error notifications are undefined
 3. **Config Data constants** — The exact meaning of constant bytes at +9: `0xC8`, +12: `0x80`, +31: `0x30`, +50: `0x04`, +54~+56: `0x010101`
 
 ---

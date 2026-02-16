@@ -8,6 +8,7 @@ import struct
 
 from scansnap.packets import (
     ConfigRequest,
+    EndScanRequest,
     GetDeviceInfoRequest,
     GetPageMetadataRequest,
     GetScanParamsRequest,
@@ -152,11 +153,10 @@ class DataChannel:
             resp = await self._read_response(reader)
             log.debug("Status response: %d bytes", len(resp))
 
-            if len(resp) >= 48:
-                adf_status = struct.unpack_from("!I", resp, 44)[0]
-                has_paper = (adf_status & 0x00010000) != 0
-                log.info("ADF status: 0x%08X, paper=%s", adf_status, has_paper)
-                if not has_paper:
+            if len(resp) >= 44:
+                scan_status = struct.unpack_from("!I", resp, 40)[0]
+                log.info("Scan status: 0x%08X", scan_status)
+                if scan_status & 0x80:
                     raise ScanError("No paper in ADF")
 
             # Step 5: Wait for scan (blocks until button pressed or app trigger)
@@ -164,12 +164,12 @@ class DataChannel:
             writer.write(WaitForScanRequest(token=self.token).pack())
             await writer.drain()
             resp = await self._read_response(reader)
-            log.info("Scan started!")
+            wait_status = struct.unpack_from("!I", resp, 12)[0] if len(resp) >= 16 else 0
+            log.info("Scan started (wait_status=%d)", wait_status)
 
             # Step 6: Receive pages (chunked transfer, 256KB per chunk)
             # In duplex mode, the scanner sends front and back as separate
             # transfer "sheets": sheet N = front, sheet N+1 = back.
-            # ADF status is checked only after both sides are received.
             physical_sheet = 0
             transfer_sheet = 0
             scanning = True
@@ -177,6 +177,10 @@ class DataChannel:
                 # --- Transfer one side (front, or back in duplex) ---
                 sides_per_sheet = 2 if config.duplex else 1
                 for side_idx in range(sides_per_sheet):
+                    log.debug(
+                        "Requesting page: transfer_sheet=%d side=%d",
+                        transfer_sheet, side_idx,
+                    )
                     jpeg_data = await self._transfer_page_chunks(
                         reader, writer, transfer_sheet,
                     )
@@ -204,16 +208,11 @@ class DataChannel:
                 await writer.drain()
                 status_resp = await self._read_response(reader)
 
-                adf_status = struct.unpack_from("!I", status_resp, 44)[0]
-                has_paper = (adf_status & 0x00010000) != 0
-                log.info(
-                    "ADF status: 0x%08X, paper=%s", adf_status, has_paper,
-                )
+                if len(status_resp) >= 44:
+                    scan_status = struct.unpack_from("!I", status_resp, 40)[0]
+                    log.info("Scan status: 0x%08X", scan_status)
 
-                if not has_paper:
-                    break
-
-                # Wait for next physical sheet — status 2 means scan complete
+                # Wait for next physical sheet — status != 0 means scan complete
                 writer.write(WaitForScanRequest(token=self.token).pack())
                 await writer.drain()
                 resp = await self._read_response(reader)
@@ -228,6 +227,14 @@ class DataChannel:
             log.info("Scan finished: %d page(s) received (%d non-empty)", len(pages), non_empty)
 
         finally:
+            # End scan session (sub=0xD6) — required to reset scanner state
+            try:
+                writer.write(EndScanRequest(token=self.token).pack())
+                await writer.drain()
+                await self._read_response(reader)
+                log.debug("End scan session OK")
+            except (ConnectionError, OSError):
+                pass
             writer.close()
             await writer.wait_closed()
 

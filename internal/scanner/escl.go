@@ -125,6 +125,11 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	return doc, nil
 }
 
+// CheckADFStatus queries the scanner for paper presence.
+func (a *ESCLAdapter) CheckADFStatus() (bool, error) {
+	return a.scanner.CheckADFStatus()
+}
+
 // Close closes the scanner connection.
 func (a *ESCLAdapter) Close() error {
 	a.scanner.Disconnect()

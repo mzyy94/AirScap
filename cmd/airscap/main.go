@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/OpenPrinting/go-mfp/proto/escl"
+	"github.com/OpenPrinting/go-mfp/transport"
+	"github.com/OpenPrinting/go-mfp/util/optional"
 	"github.com/grandcat/zeroconf"
 
 	"github.com/mzyy94/airscap/internal/scanner"
@@ -83,6 +85,21 @@ func main() {
 	esclServer := escl.NewAbstractServer(escl.AbstractServerOptions{
 		Scanner:  adapter,
 		BasePath: "",
+		Hooks: escl.ServerHooks{
+			OnScannerStatusResponse: func(_ *transport.ServerQuery, status *escl.ScannerStatus) *escl.ScannerStatus {
+				hasPaper, err := adapter.CheckADFStatus()
+				if err != nil {
+					slog.Debug("ADF status check failed", "err", err)
+					return nil
+				}
+				if hasPaper {
+					status.ADFState = optional.New(escl.ScannerAdfLoaded)
+				} else {
+					status.ADFState = optional.New(escl.ScannerAdfEmpty)
+				}
+				return status
+			},
+		},
 	})
 
 	mux := http.NewServeMux()

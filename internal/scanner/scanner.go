@@ -151,6 +151,15 @@ func (s *Scanner) Disconnect() {
 	slog.Info("disconnected from scanner")
 }
 
+// CheckADFStatus queries the scanner's ADF and returns whether paper is present.
+func (s *Scanner) CheckADFStatus() (bool, error) {
+	if !s.connected {
+		return false, fmt.Errorf("scanner not connected")
+	}
+	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
+	return dataCh.CheckADFStatus()
+}
+
 // Host returns the scanner's IP address.
 func (s *Scanner) Host() string { return s.host }
 

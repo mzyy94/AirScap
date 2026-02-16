@@ -678,6 +678,25 @@ class WaitForScanRequest:
 
 
 @dataclass
+class EndScanRequest:
+    """cmd=0x06, sub=0xD6 — end/cancel scan session."""
+    token: bytes = b"\x00" * 8
+
+    def pack(self) -> bytes:
+        params = struct.pack(
+            "!IIIIIII",
+            0x00000000,
+            0x00000000,
+            0x00000000,
+            0xD6000000,
+            0x00000000,
+            0x00000000,
+            0x00000000,
+        )
+        return DataRequest(self.token, DataCommand.GET_SET).pack(params)
+
+
+@dataclass
 class PageTransferRequest:
     """cmd=0x0C — request a page of scan data.
 
