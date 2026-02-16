@@ -159,8 +159,9 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	if err != nil {
 		return nil, fmt.Errorf("get status: %w", err)
 	}
-	if len(resp) >= 60 {
-		adfStatus := binary.BigEndian.Uint32(resp[56:60])
+	slog.Debug("status response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
+	if len(resp) >= 48 {
+		adfStatus := binary.BigEndian.Uint32(resp[44:48])
 		slog.Info("ADF status", "status", fmt.Sprintf("0x%08X", adfStatus), "paper", HasPaper(adfStatus))
 		if !HasPaper(adfStatus) {
 			return nil, &ScanError{Msg: "no paper in ADF"}
@@ -310,9 +311,9 @@ func (d *DataChannel) CheckADFStatus() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if len(resp) < 60 {
+	if len(resp) < 48 {
 		return false, errors.New("status response too short for ADF check")
 	}
-	adfStatus := binary.BigEndian.Uint32(resp[56:60])
+	adfStatus := binary.BigEndian.Uint32(resp[44:48])
 	return HasPaper(adfStatus), nil
 }

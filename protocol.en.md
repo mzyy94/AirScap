@@ -611,7 +611,7 @@ Retrieves page details after a page transfer. Sent with different parameters tha
 
 Checks scan status. Used to determine ADF (Automatic Document Feeder) paper presence.
 
-The ADF status reference offset differs between pre-scan check and in-loop check.
+ADF status is checked at offset 44. The same offset is used for both pre-scan check and in-loop check.
 
 **Request (64 bytes):**
 
@@ -629,9 +629,9 @@ The ADF status reference offset differs between pre-scan check and in-loop check
 | 0 | 4 | Length | `0x00000048` (72) |
 | 4 | 36 | Header | Zero-filled |
 | 40 | 4 | Scan Status | Scan progress state |
-| 44 | 4 | ADF Status (in-loop) | Paper check during scan loop |
+| 44 | 4 | ADF Status | Paper presence (determined by bitmask) |
 | 48 | 8 | Reserved | |
-| 56 | 4 | ADF Status (initial) | Paper check before scan start |
+| 56 | 4 | Device Flags | Device state flags (not used for paper detection) |
 | 60 | 12 | Reserved | Zero-filled |
 
 **ADF Paper Detection:**
@@ -642,12 +642,13 @@ Paper presence is determined by bitmask `0x00010000`:
 has_paper = (adf_status & 0x00010000) != 0
 ```
 
-| Context | Check Offset | Paper present example | No paper example |
-|---------|-------------|----------------------|-----------------|
-| Pre-scan | Offset 56 | `0xC0010000` | `0xC0000000` |
-| Scan loop | Offset 44 | `0x00010000` | `0x00000000` |
+| Paper present example | No paper example |
+|----------------------|-----------------|
+| `0x00010000` | `0x00000000` |
 
 When no paper is detected, the client generates an error and aborts (no protocol-level error code exists).
+
+> **Note:** The value at offset 56 (e.g., `0xC0000000`) represents device state flags, and the `0x00010000` bit may not be set even when paper is loaded. Always use offset 44 for paper detection.
 
 ### 5.5 CONFIG Command (0x08)
 

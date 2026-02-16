@@ -152,8 +152,8 @@ class DataChannel:
             resp = await self._read_response(reader)
             log.debug("Status response: %d bytes", len(resp))
 
-            if len(resp) >= 60:
-                adf_status = struct.unpack_from("!I", resp, 56)[0]
+            if len(resp) >= 48:
+                adf_status = struct.unpack_from("!I", resp, 44)[0]
                 has_paper = (adf_status & 0x00010000) != 0
                 log.info("ADF status: 0x%08X, paper=%s", adf_status, has_paper)
                 if not has_paper:
