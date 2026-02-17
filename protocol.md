@@ -271,18 +271,17 @@ ssNR パケットは VENS リクエストと対で送信され、クライアン
 | 40 | 4 | Client Count | `0x00000001` |
 | 44 | 4 | Client IP | クライアントの IPv4 アドレス |
 | 48 | 4 | Notification Port | イベント通知用ポート（55265） |
-| 52 | 14 | Identity String | ペアリング identity（§4.5 参照、ペアリング時のみ） |
-| 66 | 30 | Reserved | ゼロ埋め |
-| 96 | 2 | Year | 現在年（big-endian） |
-| 98 | 1 | Month | 現在月 |
-| 99 | 1 | Day | 現在日 |
-| 100 | 1 | Hour | 現在時 |
-| 101 | 1 | Minute | 現在分 |
-| 102 | 1 | Second | 現在秒 |
-| 103 | 1 | Reserved | `0x00` |
-| 104 | 8 | Reserved | ゼロ埋め |
-| 112 | 4 | Client Type | `0xFFFF8170` |
-| 116 | 268 | Reserved | ゼロ埋め |
+| 52 | 48 | Identity String | ペアリング identity（§4.5 参照、null-padded ASCII） |
+| 100 | 2 | Year | 現在年（big-endian） |
+| 102 | 1 | Month | 現在月 |
+| 103 | 1 | Day | 現在日 |
+| 104 | 1 | Hour | 現在時 |
+| 105 | 1 | Minute | 現在分 |
+| 106 | 1 | Second | 現在秒 |
+| 107 | 1 | Reserved | `0x00` |
+| 108 | 8 | Reserved | ゼロ埋め |
+| 116 | 4 | Client Type | `0xFFFF8170` |
+| 120 | 264 | Reserved | ゼロ埋め |
 
 **レスポンス（20バイト）:**
 

@@ -271,18 +271,17 @@ The client sends its information (IP address, notification port, current time, i
 | 40 | 4 | Client Count | `0x00000001` |
 | 44 | 4 | Client IP | Client IPv4 address |
 | 48 | 4 | Notification Port | Event notification port (55265) |
-| 52 | 14 | Identity String | Pairing identity (see §4.5; pairing only) |
-| 66 | 30 | Reserved | Zero-filled |
-| 96 | 2 | Year | Current year (big-endian) |
-| 98 | 1 | Month | Current month |
-| 99 | 1 | Day | Current day |
-| 100 | 1 | Hour | Current hour |
-| 101 | 1 | Minute | Current minute |
-| 102 | 1 | Second | Current second |
-| 103 | 1 | Reserved | `0x00` |
-| 104 | 8 | Reserved | Zero-filled |
-| 112 | 4 | Client Type | `0xFFFF8170` |
-| 116 | 268 | Reserved | Zero-filled |
+| 52 | 48 | Identity String | Pairing identity (see §4.5; null-padded ASCII) |
+| 100 | 2 | Year | Current year (big-endian) |
+| 102 | 1 | Month | Current month |
+| 103 | 1 | Day | Current day |
+| 104 | 1 | Hour | Current hour |
+| 105 | 1 | Minute | Current minute |
+| 106 | 1 | Second | Current second |
+| 107 | 1 | Reserved | `0x00` |
+| 108 | 8 | Reserved | Zero-filled |
+| 116 | 4 | Client Type | `0xFFFF8170` |
+| 120 | 264 | Reserved | Zero-filled |
 
 **Response (20 bytes):**
 
