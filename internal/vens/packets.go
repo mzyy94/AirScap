@@ -70,15 +70,15 @@ type controlHeader struct {
 	Token   [8]byte  // [16:24]
 }
 
-// registerRequestWire is a 32-byte register/deregister packet.
-type registerRequestWire struct {
+// releaseRequestWire is a 32-byte release packet (register/deregister session).
+type releaseRequestWire struct {
 	controlHeader        // [0:24]
 	Action        uint32 // [24:28]
 	_             [4]byte // [28:32]
 }
 
-// statusRequestWire is a 32-byte status request packet.
-type statusRequestWire struct {
+// getWifiStatusRequestWire is a 32-byte WiFi status request packet.
+type getWifiStatusRequestWire struct {
 	controlHeader        // [0:24]
 	_             [8]byte // [24:32]
 }
@@ -267,7 +267,7 @@ func ValidateWelcome(data []byte) error {
 
 // MarshalReleaseRequest builds a 32-byte release request (register/deregister session).
 func MarshalReleaseRequest(token [8]byte, action uint32) []byte {
-	return writeWire(&registerRequestWire{
+	return writeWire(&releaseRequestWire{
 		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdRelease, Token: token},
 		Action:        action,
 	})
@@ -318,7 +318,7 @@ func MarshalReserveRequest(token [8]byte, clientIP string, notifyPort uint16, id
 
 // MarshalGetWifiStatusRequest builds a 32-byte WiFi status request.
 func MarshalGetWifiStatusRequest(token [8]byte) []byte {
-	return writeWire(&statusRequestWire{
+	return writeWire(&getWifiStatusRequestWire{
 		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdGetWifiStatus, Token: token},
 	})
 }
@@ -334,7 +334,7 @@ func ParseGetWifiStatusResponse(data []byte) (state uint32, err error) {
 // ParseReserveResponse extracts the status code from a 20-byte reserve response.
 func ParseReserveResponse(data []byte) (status uint32, err error) {
 	if len(data) < 20 {
-		return 0, errors.New("configure response too short")
+		return 0, errors.New("reserve response too short")
 	}
 	return binary.BigEndian.Uint32(data[8:12]), nil
 }
