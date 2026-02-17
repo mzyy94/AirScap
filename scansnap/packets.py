@@ -22,7 +22,14 @@ CLIENT_NOTIFY_PORT = 55265
 class ControlCommand(IntEnum):
     RESERVE = 0x11
     RELEASE = 0x12
+    GET_DEV_INFO = 0x13
+    SET_DEV_INFO = 0x14
+    UPDATE_PSW = 0x15
     GET_WIFI_STATUS = 0x30
+    SET_WIFI_MODE = 0x31
+    XFER_DATA = 0x50
+    FIRM_UPDATE = 0x51
+    SET_START_MODE = 0x62
 
 
 class DataCommand(IntEnum):
