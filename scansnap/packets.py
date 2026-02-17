@@ -259,10 +259,10 @@ class ReserveRequest:
         buf[44:48] = _ip_to_bytes(self.client_ip)
         struct.pack_into("!H", buf, 48, 0)
         struct.pack_into("!H", buf, 50, self.notify_port)
-        # identity string at offset 52 — pairing secret
+        # identity string at offset 52 — pairing secret (max 48 bytes = SIZE_OF_PSW_BYTES in APK)
         id_str = self.identity.encode("ascii") if self.identity else \
             "".join(self.client_ip.split(".")).encode("ascii")
-        buf[52:52 + min(len(id_str), 44)] = id_str[:44]
+        buf[52:52 + min(len(id_str), 48)] = id_str[:48]
         # date/time at offset 100
         dt = self.timestamp
         struct.pack_into("!H", buf, 100, dt.year)

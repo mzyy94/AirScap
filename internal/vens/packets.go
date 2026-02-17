@@ -289,7 +289,7 @@ func MarshalReserveRequest(token [8]byte, clientIP string, notifyPort uint16, id
 	p.putBytes(44, ip[:])
 	p.putU16(50, notifyPort)
 
-	// Identity string at offset 52 (max 44 bytes)
+	// Identity string at offset 52 (max 48 bytes = SIZE_OF_PSW_BYTES in APK)
 	idStr := identity
 	if idStr == "" {
 		parsed := net.ParseIP(clientIP).To4()
@@ -298,8 +298,8 @@ func MarshalReserveRequest(token [8]byte, clientIP string, notifyPort uint16, id
 		}
 	}
 	idBytes := []byte(idStr)
-	if len(idBytes) > 44 {
-		idBytes = idBytes[:44]
+	if len(idBytes) > 48 {
+		idBytes = idBytes[:48]
 	}
 	p.putBytes(52, idBytes)
 
