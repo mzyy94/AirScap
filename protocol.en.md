@@ -585,9 +585,9 @@ The third byte depends on paper size: `0x09` for postcard, `0x0B` for all others
 | Quality | DPI | Hex |
 |---------|-----|-----|
 | AUTO | 0 | `0x0000` |
-| NORMAL | 200 | `0x00C8` |
-| FINE | 300 | `0x012C` |
-| SUPERFINE | 600 | `0x0258` |
+| NORMAL | 150 | `0x0096` |
+| FINE | 200 | `0x00C8` |
+| SUPERFINE | 300 | `0x012C` |
 
 #### 5.3.5 Get Page Metadata (sub=0x12, within scan session)
 
