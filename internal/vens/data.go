@@ -189,6 +189,16 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	}
 	slog.Debug("set config response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
 
+	// Step 2.5: Write tone curve for bleed-through reduction (sub=0xDB)
+	if cfg.BleedThrough {
+		slog.Debug("scan step 2.5: writing bleed-through tone curve...")
+		resp, err = sendAndRecv(MarshalWriteToneCurve(d.token))
+		if err != nil {
+			return nil, fmt.Errorf("write tone curve: %w", err)
+		}
+		slog.Debug("tone curve response", "bytes", len(resp))
+	}
+
 	// Step 3: Prepare scan
 	slog.Debug("scan step 3: preparing scan...")
 	resp, err = sendAndRecv(MarshalPrepareScan(d.token))
@@ -225,6 +235,9 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	if len(resp) >= 16 {
 		waitStatus := binary.BigEndian.Uint32(resp[12:16])
 		slog.Info("scan started", "waitStatus", waitStatus)
+		if waitStatus != 0 {
+			return nil, &ScanError{Msg: fmt.Sprintf("WaitForScan returned status=%d (expected 0)", waitStatus)}
+		}
 	} else {
 		slog.Info("scan started!")
 	}
@@ -331,10 +344,28 @@ func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int, backSide bool
 			return nil, fmt.Errorf("chunk %d send: %w", chunk, err)
 		}
 
-		headerBuf := make([]byte, PageHeaderSize)
-		if _, err := io.ReadFull(conn, headerBuf); err != nil {
+		// Read length prefix first to detect error responses (< 42 bytes)
+		lenBuf := make([]byte, 4)
+		if _, err := io.ReadFull(conn, lenBuf); err != nil {
+			return nil, fmt.Errorf("chunk %d length: %w", chunk, err)
+		}
+		totalLen := binary.BigEndian.Uint32(lenBuf)
+		if totalLen < uint32(PageHeaderSize) {
+			// Scanner returned an error/short response, not a page header
+			if totalLen > 4 {
+				discard := make([]byte, totalLen-4)
+				io.ReadFull(conn, discard)
+			}
+			return nil, &ScanError{Msg: fmt.Sprintf("page transfer error: expected page header, got %d bytes", totalLen)}
+		}
+
+		restBuf := make([]byte, PageHeaderSize-4)
+		if _, err := io.ReadFull(conn, restBuf); err != nil {
 			return nil, fmt.Errorf("chunk %d header: %w", chunk, err)
 		}
+		headerBuf := make([]byte, PageHeaderSize)
+		copy(headerBuf[:4], lenBuf)
+		copy(headerBuf[4:], restBuf)
 		header, err := ParsePageHeader(headerBuf)
 		if err != nil {
 			return nil, fmt.Errorf("chunk %d parse: %w", chunk, err)

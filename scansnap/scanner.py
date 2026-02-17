@@ -122,7 +122,6 @@ class Scanner:
         data_ch = DataChannel(info.device_ip, info.data_port, token)
         await scanner._data_request_with_retry(data_ch.get_device_info)
         await scanner._data_request_with_retry(data_ch.get_scan_params)
-        await scanner._data_request_with_retry(data_ch.set_config)
 
         # Step 5: Control channel — status check + register
         await scanner._control.check_status(token)

@@ -531,7 +531,7 @@ Front and back scan settings are stored in identical structures (front: +31~, ba
 | +8 | 1 | Blank Page Removal | `0xE0`=ON, `0x80`=OFF | |
 | +9 | 1 | Constant | `0xC8` | |
 | +10 | 1 | Auto Quality | `0xA0`=auto quality, `0x80`=specified | |
-| +11 | 1 | Bleed-through | `0xC0`=reduction ON, `0x80`=OFF | |
+| +11 | 1 | Bleed-through | `0xC0`=reduction ON, `0x80`=OFF | Requires CONFIG(sub=0xDB) tone curve |
 | +12 | 1 | Constant | `0x80` | |
 
 **Front Side Parameters (+31~):**
@@ -686,6 +686,17 @@ When no paper is present, the client should abort before sending WAIT_FOR_SCAN.
 
 ### 5.5 CONFIG Command (0x08)
 
+The CONFIG command uses the same data channel header format but with command `0x00000008`. Sub-commands distinguish between different configuration operations.
+
+**Sub-command List:**
+
+| Sub-command | Name | Description |
+|------------|------|-------------|
+| `0xEB` | Set configuration | Initial scanner configuration during connect |
+| `0xDB` | Write tone curve | Bleed-through reduction tone curve (256-byte LUT) |
+
+#### 5.5.1 Set Configuration (sub=0xEB)
+
 **Request (68 bytes):**
 
 | Offset | Size | Field | Value |
@@ -700,6 +711,57 @@ When no paper is present, the client should abort before sending WAIT_FOR_SCAN.
 | 64 | 4 | Sub-config | `0x05010000` |
 
 **Response (40 bytes):** Standard empty response, status `0x00000002`.
+
+#### 5.5.2 Write Tone Curve (sub=0xDB)
+
+Sent within the scan session after Write Scan Settings (sub=0xD4) when bleed-through reduction is enabled. Contains a 256-byte lookup table (LUT) that adjusts the scanner's tone curve to boost highlights and reduce bleed-through artifacts.
+
+**Required when:** The bleed-through flag at config data offset +11 is set to `0xC0`. Without this command, the scanner rejects the scan via WAIT_FOR_SCAN status=2.
+
+**Request (330 bytes):**
+
+| Offset | Size | Field | Value |
+|--------|------|-------|-------|
+| 0 | 4 | Length | `0x0000014A` (330) |
+| 4 | 4 | Magic | "VENS" |
+| 8 | 4 | Direction | `0x00000001` |
+| 12 | 4 | Reserved | `0x00000000` |
+| 16 | 8 | Session Token | |
+| 24 | 8 | Reserved | |
+| 32 | 4 | Command | `0x00000008` |
+| 36 | 4 | Reserved | `0x00000000` |
+| 40 | 4 | Input Param Length | `0x0000010A` (266) |
+| 44 | 4 | Reserved | `0x00000000` |
+| 48 | 1 | Sub-command | `0xDB` |
+| 49 | 1 | Sub-param | `0x85` |
+| 50 | 14 | Parameters | `0x000000010A00...` |
+| 64 | 10 | Tone Curve Header | `0x00001000010001000000` |
+| 74 | 256 | LUT Data | 256-byte tone curve lookup table |
+
+**LUT Structure:**
+
+The LUT maps input pixel values (0-255) to output values:
+
+| Input Range | Output | Effect |
+|------------|--------|--------|
+| `0x00`–`0x83` | Identity (output = input) | Shadows preserved unchanged |
+| `0x84`–`0xE5` | Progressively brightened (+1 to +23) | Midtones/highlights boosted |
+| `0xE6`–`0xFF` | Clipped to `0xFF` | Near-white mapped to white |
+
+The curve gradually increases brightness in the upper tonal range, effectively washing out faint bleed-through from the reverse side while preserving darker content.
+
+```mermaid
+xychart
+    title "Bleed-through Reduction Tone Curve (straight: identity, curved: LUT)"
+    x-axis "Input Pixel Value" [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255]
+    y-axis "Output Pixel Value" 0 --> 255
+    line [0, 16, 32, 48, 64, 80, 96, 112, 128, 144, 160, 176, 192, 208, 224, 240, 255]
+    line [0, 16, 32, 48, 64, 80, 96, 112, 128, 147, 167, 187, 207, 226, 246, 255, 255]
+```
+
+Input values 0–131 follow the identity mapping (both lines overlap). Above 132, the tone curve diverges upward, boosting highlights. Values 230+ are clipped to 255.
+
+**Response (40 bytes):** Standard empty response.
 
 ---
 
@@ -719,6 +781,10 @@ sequenceDiagram
     S->>C: Current settings
     C->>S: GET_SET(sub=0xD4) Write scan settings (192B)
     S->>C: ACK
+    opt Bleed-through reduction enabled
+        C->>S: CONFIG(sub=0xDB) Write tone curve (330B)
+        S->>C: ACK
+    end
 
     Note over C,S: Scan Preparation
     C->>S: GET_SET(sub=0xD5) Prepare scan

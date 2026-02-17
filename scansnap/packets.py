@@ -594,6 +594,49 @@ class ScanConfig:
         )
 
 
+# Bleed-through reduction tone curve LUT (256 bytes).
+# Captured from ScanSnap Home — boosts highlights to reduce bleed-through.
+_BLEED_THROUGH_LUT = bytes.fromhex(
+    "000102030405060708090a0b0c0d0e0f"
+    "101112131415161718191a1b1c1d1e1f"
+    "202122232425262728292a2b2c2d2e2f"
+    "303132333435363738393a3b3c3d3e3f"
+    "404142434445464748494a4b4c4d4e4f"
+    "505152535455565758595a5b5c5d5e5f"
+    "606162636465666768696a6b6c6d6e6f"
+    "707172737475767778797a7b7c7d7e7f"
+    "80818283858687888a8b8c8d8f909192"
+    "93959697989a9b9c9d9fa0a1a2a3a5a6"
+    "a7a8aaabacadafb0b1b2b4b5b6b7b8ba"
+    "bbbcbdbfc0c1c2c4c5c6c7c8cacbcccd"
+    "cfd0d1d2d4d5d6d7d9dadbdcdddfe0e1"
+    "e2e4e5e6e7e9eaebecedeff0f1f2f4f5"
+    "f6f7f9fafbfcffffffffffffffffffff"
+    "ffffffffffffffffffffffffffffffff"
+)
+
+
+@dataclass
+class WriteToneCurveRequest:
+    """cmd=0x08, sub=0xDB — write tone curve for bleed-through reduction."""
+    token: bytes = b"\x00" * 8
+
+    def pack(self) -> bytes:
+        tone_header = bytes.fromhex("00001000010001000000")
+        tone_data = tone_header + _BLEED_THROUGH_LUT
+        params = struct.pack(
+            "!IIIIIII",
+            0x00000000,
+            0x0000010A,   # input param length = 266
+            0x00000000,
+            0xDB850000,   # sub-command 0xDB
+            0x00010A00,
+            0x00000000,
+            0x00000000,
+        ) + tone_data
+        return DataRequest(self.token, DataCommand.CONFIG).pack(params)
+
+
 @dataclass
 class ConfigRequest:
     """cmd=0x08 — scanner config."""

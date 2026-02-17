@@ -20,6 +20,7 @@ from scansnap.packets import (
     ScanConfig,
     WaitForScanRequest,
     WelcomePacket,
+    WriteToneCurveRequest,
 )
 
 log = logging.getLogger(__name__)
@@ -141,6 +142,14 @@ class DataChannel:
             resp = await self._read_response(reader)
             log.debug("Set config response: %d bytes, hex=%s", len(resp), resp.hex())
 
+            # Step 2.5: Write tone curve for bleed-through reduction (sub=0xDB)
+            if config.bleed_through:
+                log.debug("Writing bleed-through tone curve (0xDB)...")
+                writer.write(WriteToneCurveRequest(token=self.token).pack())
+                await writer.drain()
+                resp = await self._read_response(reader)
+                log.debug("Tone curve response: %d bytes", len(resp))
+
             # Step 3: Prepare scan (sub=0xD5)
             writer.write(PrepareScanRequest(token=self.token).pack())
             await writer.drain()
@@ -166,6 +175,11 @@ class DataChannel:
             resp = await self._read_response(reader)
             wait_status = struct.unpack_from("!I", resp, 12)[0] if len(resp) >= 16 else 0
             log.info("Scan started (wait_status=%d)", wait_status)
+
+            if wait_status != 0:
+                raise ScanError(
+                    f"WaitForScan returned status={wait_status} (expected 0)"
+                )
 
             # Step 6: Receive pages (chunked transfer, 256KB per chunk)
             # In duplex mode, the scanner sends front and back as separate
@@ -267,7 +281,20 @@ class DataChannel:
             writer.write(req.pack())
             await writer.drain()
 
-            header_data = await _read_exact(reader, PageHeader.size())
+            # Read length-prefix first to handle error responses (< 42 bytes)
+            len_data = await _read_exact(reader, 4)
+            total_length = int.from_bytes(len_data, "big")
+
+            if total_length < PageHeader.size():
+                # Scanner returned an error/short response, not a page header
+                rest = await _read_exact(reader, total_length - 4)
+                raise ScanError(
+                    f"Page transfer error: expected page header, got {total_length} bytes"
+                )
+
+            # Read the rest of the 42-byte header
+            rest_header = await _read_exact(reader, PageHeader.size() - 4)
+            header_data = len_data + rest_header
             header = PageHeader.unpack(header_data)
             log.debug(
                 "Chunk: page_num=0x%04X page_type=%d size=%d",
