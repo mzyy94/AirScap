@@ -83,7 +83,7 @@ func (s *ControlSession) Register(token [8]byte) error {
 	}
 	defer conn.Close()
 
-	req := MarshalRegisterRequest(token, 1)
+	req := MarshalReleaseRequest(token, 1)
 	slog.Debug("register request", "bytes", len(req), "hex", hex.EncodeToString(req))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("register send: %w", err)
@@ -101,7 +101,7 @@ func (s *ControlSession) Register(token [8]byte) error {
 // Configure sends client configuration (identity, notify port, etc.) to the scanner.
 // Returns true if the scanner accepted the pairing.
 func (s *ControlSession) Configure(token [8]byte, clientIP string, notifyPort uint16, identity string) (bool, error) {
-	req := MarshalConfigureRequest(token, clientIP, notifyPort, identity, time.Now())
+	req := MarshalReserveRequest(token, clientIP, notifyPort, identity, time.Now())
 	slog.Debug("configuring session", "ip", clientIP, "port", notifyPort, "identity_len", len(identity))
 
 	resp, err := s.sendRecv(req)
@@ -110,7 +110,7 @@ func (s *ControlSession) Configure(token [8]byte, clientIP string, notifyPort ui
 	}
 
 	slog.Debug("configure response", "bytes", len(resp))
-	status, err := ParseConfigureResponse(resp)
+	status, err := ParseReserveResponse(resp)
 	if err != nil {
 		return false, err
 	}
@@ -125,12 +125,12 @@ func (s *ControlSession) Configure(token [8]byte, clientIP string, notifyPort ui
 // CheckStatus queries the scanner's connection status.
 func (s *ControlSession) CheckStatus(token [8]byte) (uint32, error) {
 	slog.Debug("checking scanner status...")
-	req := MarshalStatusRequest(token)
+	req := MarshalGetWifiStatusRequest(token)
 	resp, err := s.sendRecv(req)
 	if err != nil {
 		return 0, err
 	}
-	state, err := ParseStatusResponse(resp)
+	state, err := ParseGetWifiStatusResponse(resp)
 	if err != nil {
 		return 0, err
 	}
@@ -147,7 +147,7 @@ func (s *ControlSession) Deregister(token [8]byte) error {
 	}
 	defer conn.Close()
 
-	req := MarshalRegisterRequest(token, 1)
+	req := MarshalReleaseRequest(token, 1)
 	slog.Debug("deregister request", "bytes", len(req), "hex", hex.EncodeToString(req))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("deregister send: %w", err)

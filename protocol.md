@@ -34,17 +34,17 @@ sequenceDiagram
     S->>C: UDP:55264 デバイス情報応答
 
     Note over S,C: Phase 1.5: ペアリング（初回のみ）
-    C->>S: TCP:53219 CONFIGURE (cmd=0x11, identity付き)
+    C->>S: TCP:53219 RESERVE (cmd=0x11, identity付き)
     S->>C: TCP:53219 承認/拒否
 
     Note over S,C: Phase 2: セッション確立
     C->>S: UDP ハートビート (0.5秒間隔, 継続)
-    C->>S: TCP:53219 CONFIGURE (cmd=0x11)
+    C->>S: TCP:53219 RESERVE (cmd=0x11)
     S->>C: TCP:53219 構成確認
 
     Note over S,C: Phase 3: デバイスセットアップ
     C->>S: TCP:53218 デバイス情報取得 (GET_SET sub=0x12)
-    C->>S: TCP:53219 STATUS (cmd=0x30)
+    C->>S: TCP:53219 GET_WIFI_STATUS (cmd=0x30)
     C->>S: TCP:53218 スキャンパラメータ取得 (GET_SET sub=0x90)
     C->>S: TCP:53218 構成設定 (CONFIG cmd=0x08)
 
@@ -59,7 +59,7 @@ sequenceDiagram
     end
 
     Note over S,C: Phase 5: 切断
-    C->>S: TCP:53219 REGISTER (cmd=0x12, 登録解除)
+    C->>S: TCP:53219 RELEASE (cmd=0x12, 登録解除)
 ```
 
 ---
@@ -230,11 +230,11 @@ ssNR パケットは VENS リクエストと対で送信され、クライアン
 
 | コマンドコード | 名称 | 方向 | 説明 |
 |---------------|------|------|------|
-| `0x00000011` | CONFIGURE | C→S | クライアント構成情報の送信 |
-| `0x00000012` | REGISTER | C→S | セッション登録 / 登録解除 |
-| `0x00000030` | STATUS | C→S | ステータス確認 |
+| `0x00000011` | RESERVE | C→S | スキャナー予約（クライアント構成情報の送信） |
+| `0x00000012` | RELEASE | C→S | スキャナー解放（セッション登録 / 登録解除） |
+| `0x00000030` | GET_WIFI_STATUS | C→S | Wi-Fi ステータス確認 |
 
-### 4.2 セッション登録（REGISTER: 0x12）
+### 4.2 セッション登録（RELEASE: 0x12）
 
 セッションの登録および登録解除に使用される。
 
@@ -252,7 +252,7 @@ ssNR パケットは VENS リクエストと対で送信され、クライアン
 
 **レスポンス（16バイト）:** 固定長の ACK パケット。
 
-### 4.3 クライアント構成（CONFIGURE: 0x11）
+### 4.3 スキャナー予約（RESERVE: 0x11）
 
 クライアントが自身の情報（IPアドレス、通知ポート、現在時刻、identity）をスキャナーに送信する。ペアリングおよび通常接続の両方で使用される。
 
@@ -301,7 +301,7 @@ ssNR パケットは VENS リクエストと対で送信され、クライアン
 | `0x00000000` | 承認（ペアリング成功 / セッション確立） |
 | `0xFFFFFFFD` (-3) | 拒否（不正な identity） |
 
-### 4.4 ステータス確認（STATUS: 0x30）
+### 4.4 Wi-Fi ステータス確認（GET_WIFI_STATUS: 0x30）
 
 接続確認やスキャン後のステータス取得に使用される。
 
@@ -329,7 +329,7 @@ ssNR パケットは VENS リクエストと対で送信され、クライアン
 
 ### 4.5 ペアリングプロトコル
 
-初回接続時にスキャナーとクライアントをペアリングするプロトコル。パスワード認証方式で、物理ボタンの押下は不要。ペアリング完了後は identity を保存し、以降の接続で CONFIGURE リクエストに含めることでセッションが確立される。
+初回接続時にスキャナーとクライアントをペアリングするプロトコル。パスワード認証方式で、物理ボタンの押下は不要。ペアリング完了後は identity を保存し、以降の接続で RESERVE リクエストに含めることでセッションが確立される。
 
 #### 4.5.1 Identity 算出アルゴリズム
 
@@ -378,7 +378,7 @@ sequenceDiagram
     S->>C: デバイス情報応答
 
     Note over C,S: Phase 2: 認証
-    C->>S: TCP:53219 CONFIGURE (cmd=0x11, identity=算出値)
+    C->>S: TCP:53219 RESERVE (cmd=0x11, identity=算出値)
     alt 正しいパスワード
         S->>C: レスポンス (status=0x00000000, 承認)
     else 誤ったパスワード
@@ -392,8 +392,8 @@ sequenceDiagram
     C->>S: TCP:53218 CONFIG(cmd=0x08) 構成設定
 
     Note over C,S: Phase 4: 登録確定
-    C->>S: TCP:53219 STATUS (cmd=0x30)
-    C->>S: TCP:53219 REGISTER (cmd=0x12)
+    C->>S: TCP:53219 GET_WIFI_STATUS (cmd=0x30)
+    C->>S: TCP:53219 RELEASE (cmd=0x12)
     S->>C: 登録確認
 ```
 
@@ -914,22 +914,22 @@ stateDiagram-v2
     [*] --> Discovery: UDP 探索
 
     state "初回ペアリング" as Pairing {
-        Discovery --> Authenticate: CONFIGURE (identity付き)
+        Discovery --> Authenticate: RESERVE (identity付き)
         Authenticate --> Rejected: status=0xFFFFFFFD
         Rejected --> [*]: 認証失敗
         Authenticate --> Accepted: status=0x00000000
     }
 
     state "通常接続" as Normal {
-        Discovery --> Configuration: CONFIGURE
+        Discovery --> Configuration: RESERVE
     }
 
     Accepted --> Heartbeat: UDP ハートビート開始
     Configuration --> Heartbeat
 
     Heartbeat --> DeviceSetup: デバイス情報+パラメータ+設定
-    DeviceSetup --> StatusCheck: STATUS
-    StatusCheck --> Register: REGISTER (ペアリング時)
+    DeviceSetup --> StatusCheck: GET_WIFI_STATUS
+    StatusCheck --> Register: RELEASE (ペアリング時)
     StatusCheck --> Idle: 通常接続時
     Register --> Idle
 
@@ -942,7 +942,7 @@ stateDiagram-v2
     PageTransfer --> Idle: 全ページ完了
 
     Idle --> Disconnecting: 切断要求
-    Disconnecting --> [*]: REGISTER (登録解除)
+    Disconnecting --> [*]: RELEASE (登録解除)
 ```
 
 ---

@@ -20,9 +20,9 @@ CLIENT_NOTIFY_PORT = 55265
 
 
 class ControlCommand(IntEnum):
-    REGISTER = 0x12
-    CONFIGURE = 0x11
-    STATUS = 0x30
+    RESERVE = 0x11
+    RELEASE = 0x12
+    GET_WIFI_STATUS = 0x30
 
 
 class DataCommand(IntEnum):
@@ -220,7 +220,7 @@ class WelcomePacket:
 
 
 @dataclass
-class RegisterRequest:
+class ReleaseRequest:
     """Client → server on control channel, 32 bytes."""
     token: bytes = b"\x00" * 8
     action: int = 1  # 1 = register
@@ -229,7 +229,7 @@ class RegisterRequest:
         buf = bytearray(32)
         struct.pack_into("!I", buf, 0, 32)
         buf[4:8] = MAGIC
-        struct.pack_into("!I", buf, 8, ControlCommand.REGISTER)
+        struct.pack_into("!I", buf, 8, ControlCommand.RELEASE)
         struct.pack_into("!I", buf, 12, 0)
         buf[16:24] = self.token
         struct.pack_into("!I", buf, 24, self.action)
@@ -237,7 +237,7 @@ class RegisterRequest:
 
 
 @dataclass
-class ConfigureRequest:
+class ReserveRequest:
     """Client → server on control channel, 384 bytes."""
     token: bytes = b"\x00" * 8
     client_ip: str = ""
@@ -249,7 +249,7 @@ class ConfigureRequest:
         buf = bytearray(384)
         struct.pack_into("!I", buf, 0, 384)
         buf[4:8] = MAGIC
-        struct.pack_into("!I", buf, 8, ControlCommand.CONFIGURE)
+        struct.pack_into("!I", buf, 8, ControlCommand.RESERVE)
         struct.pack_into("!I", buf, 12, 0)
         buf[16:24] = self.token
         # config fields
@@ -276,7 +276,7 @@ class ConfigureRequest:
 
 
 @dataclass
-class StatusRequest:
+class GetWifiStatusRequest:
     """Client → server on control channel, 32 bytes."""
     token: bytes = b"\x00" * 8
 
@@ -284,18 +284,18 @@ class StatusRequest:
         buf = bytearray(32)
         struct.pack_into("!I", buf, 0, 32)
         buf[4:8] = MAGIC
-        struct.pack_into("!I", buf, 8, ControlCommand.STATUS)
+        struct.pack_into("!I", buf, 8, ControlCommand.GET_WIFI_STATUS)
         buf[16:24] = self.token
         return bytes(buf)
 
 
 @dataclass
-class StatusResponse:
+class GetWifiStatusResponse:
     """Server → client on control channel, 32 bytes."""
     state: int = 0
 
     @classmethod
-    def unpack(cls, data: bytes) -> StatusResponse:
+    def unpack(cls, data: bytes) -> GetWifiStatusResponse:
         if len(data) < 32:
             raise ValueError("Status response too short")
         state = struct.unpack_from("!I", data, 16)[0]

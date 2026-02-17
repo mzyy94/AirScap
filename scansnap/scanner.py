@@ -106,7 +106,7 @@ class Scanner:
         scanner._discovered = True
         scanner._discovery = discovery
 
-        # Step 2: ConfigureRequest with identity — check acceptance
+        # Step 2: ReserveRequest with identity — check acceptance
         accepted = await scanner._control.try_configure(
             token, scanner._local_ip, CLIENT_NOTIFY_PORT, identity=identity,
         )

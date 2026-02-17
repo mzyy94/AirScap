@@ -18,9 +18,9 @@ const (
 
 // Control channel commands (TCP:53219).
 const (
-	CmdConfigure uint32 = 0x11
-	CmdRegister  uint32 = 0x12
-	CmdStatus    uint32 = 0x30
+	CmdReserve      uint32 = 0x11 // Reserve scanner (send identity / client config)
+	CmdRelease      uint32 = 0x12 // Release scanner (register / deregister session)
+	CmdGetWifiStatus uint32 = 0x30 // Query scanner WiFi / connection status
 )
 
 // Data channel commands (TCP:53218).

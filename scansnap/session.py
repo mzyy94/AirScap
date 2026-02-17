@@ -9,10 +9,10 @@ from datetime import datetime
 
 from scansnap.packets import (
     CLIENT_NOTIFY_PORT,
-    ConfigureRequest,
-    RegisterRequest,
-    StatusRequest,
-    StatusResponse,
+    ReserveRequest,
+    ReleaseRequest,
+    GetWifiStatusRequest,
+    GetWifiStatusResponse,
     WelcomePacket,
 )
 
@@ -64,7 +64,7 @@ class ControlSession:
 
     async def register(self, token: bytes) -> bytes:
         """Register with the scanner. Returns the raw response (16-byte ack)."""
-        req = RegisterRequest(token=token, action=1)
+        req = ReleaseRequest(token=token, action=1)
         log.info("Registering with scanner...")
         reader, writer = await self._connect()
         try:
@@ -86,7 +86,7 @@ class ControlSession:
         identity: str = "",
     ) -> bytes:
         """Send client configuration to the scanner."""
-        req = ConfigureRequest(
+        req = ReserveRequest(
             token=token,
             client_ip=client_ip,
             notify_port=notify_port,
@@ -105,7 +105,7 @@ class ControlSession:
         notify_port: int = CLIENT_NOTIFY_PORT,
         identity: str = "",
     ) -> bool:
-        """Send ConfigureRequest and return True if accepted, False if rejected."""
+        """Send ReserveRequest and return True if accepted, False if rejected."""
         resp = await self.configure(token, client_ip, notify_port, identity)
         status = struct.unpack_from("!i", resp, 8)[0]
         if status == 0:
@@ -114,17 +114,17 @@ class ControlSession:
         log.info("Pairing rejected (status=%d)", status)
         return False
 
-    async def check_status(self, token: bytes) -> StatusResponse:
+    async def check_status(self, token: bytes) -> GetWifiStatusResponse:
         """Check connection status."""
-        req = StatusRequest(token=token)
+        req = GetWifiStatusRequest(token=token)
         resp = await self._send_recv(req.pack())
-        status = StatusResponse.unpack(resp)
+        status = GetWifiStatusResponse.unpack(resp)
         log.debug("Status: state=%d", status.state)
         return status
 
     async def deregister(self, token: bytes) -> bytes:
         """Deregister from the scanner."""
-        req = RegisterRequest(token=token, action=1)
+        req = ReleaseRequest(token=token, action=1)
         log.info("Deregistering...")
         reader, writer = await self._connect()
         try:

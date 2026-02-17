@@ -265,20 +265,20 @@ func ValidateWelcome(data []byte) error {
 	return nil
 }
 
-// MarshalRegisterRequest builds a 32-byte register/deregister request.
-func MarshalRegisterRequest(token [8]byte, action uint32) []byte {
+// MarshalReleaseRequest builds a 32-byte release request (register/deregister session).
+func MarshalReleaseRequest(token [8]byte, action uint32) []byte {
 	return writeWire(&registerRequestWire{
-		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdRegister, Token: token},
+		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdRelease, Token: token},
 		Action:        action,
 	})
 }
 
-// MarshalConfigureRequest builds a 384-byte configure request.
-func MarshalConfigureRequest(token [8]byte, clientIP string, notifyPort uint16, identity string, ts time.Time) []byte {
+// MarshalReserveRequest builds a 384-byte reserve request.
+func MarshalReserveRequest(token [8]byte, clientIP string, notifyPort uint16, identity string, ts time.Time) []byte {
 	p := newPacket(384)
 	p.putU32(0, 384)
 	p.putBytes(4, Magic[:])
-	p.putU32(8, CmdConfigure)
+	p.putU32(8, CmdReserve)
 	p.putBytes(16, token[:])
 
 	// Config block
@@ -316,23 +316,23 @@ func MarshalConfigureRequest(token [8]byte, clientIP string, notifyPort uint16, 
 	return p
 }
 
-// MarshalStatusRequest builds a 32-byte status request.
-func MarshalStatusRequest(token [8]byte) []byte {
+// MarshalGetWifiStatusRequest builds a 32-byte WiFi status request.
+func MarshalGetWifiStatusRequest(token [8]byte) []byte {
 	return writeWire(&statusRequestWire{
-		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdStatus, Token: token},
+		controlHeader: controlHeader{Size: 32, Magic: Magic, Command: CmdGetWifiStatus, Token: token},
 	})
 }
 
-// ParseStatusResponse extracts the state field from a 32-byte status response.
-func ParseStatusResponse(data []byte) (state uint32, err error) {
+// ParseGetWifiStatusResponse extracts the state field from a 32-byte status response.
+func ParseGetWifiStatusResponse(data []byte) (state uint32, err error) {
 	if len(data) < 32 {
 		return 0, errors.New("status response too short")
 	}
 	return binary.BigEndian.Uint32(data[16:20]), nil
 }
 
-// ParseConfigureResponse extracts the status code from a 20-byte configure response.
-func ParseConfigureResponse(data []byte) (status uint32, err error) {
+// ParseReserveResponse extracts the status code from a 20-byte reserve response.
+func ParseReserveResponse(data []byte) (status uint32, err error) {
 	if len(data) < 20 {
 		return 0, errors.New("configure response too short")
 	}

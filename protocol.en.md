@@ -34,17 +34,17 @@ sequenceDiagram
     S->>C: UDP:55264 Device info response
 
     Note over S,C: Phase 1.5: Pairing (first time only)
-    C->>S: TCP:53219 CONFIGURE (cmd=0x11, with identity)
+    C->>S: TCP:53219 RESERVE (cmd=0x11, with identity)
     S->>C: TCP:53219 Accept/Reject
 
     Note over S,C: Phase 2: Session Establishment
     C->>S: UDP Heartbeat (0.5s interval, continuous)
-    C->>S: TCP:53219 CONFIGURE (cmd=0x11)
+    C->>S: TCP:53219 RESERVE (cmd=0x11)
     S->>C: TCP:53219 Configuration ACK
 
     Note over S,C: Phase 3: Device Setup
     C->>S: TCP:53218 Get device info (GET_SET sub=0x12)
-    C->>S: TCP:53219 STATUS (cmd=0x30)
+    C->>S: TCP:53219 GET_WIFI_STATUS (cmd=0x30)
     C->>S: TCP:53218 Get scan params (GET_SET sub=0x90)
     C->>S: TCP:53218 Set config (CONFIG cmd=0x08)
 
@@ -59,7 +59,7 @@ sequenceDiagram
     end
 
     Note over S,C: Phase 5: Disconnect
-    C->>S: TCP:53219 REGISTER (cmd=0x12, deregister)
+    C->>S: TCP:53219 RELEASE (cmd=0x12, deregister)
 ```
 
 ---
@@ -230,11 +230,11 @@ Used for session management. At the start of every TCP connection, the server se
 
 | Command Code | Name | Direction | Description |
 |-------------|------|-----------|-------------|
-| `0x00000011` | CONFIGURE | C→S | Send client configuration |
-| `0x00000012` | REGISTER | C→S | Session registration / deregistration |
-| `0x00000030` | STATUS | C→S | Status check |
+| `0x00000011` | RESERVE | C→S | Reserve scanner (send client configuration) |
+| `0x00000012` | RELEASE | C→S | Release scanner (session registration / deregistration) |
+| `0x00000030` | GET_WIFI_STATUS | C→S | Wi-Fi status check |
 
-### 4.2 Session Registration (REGISTER: 0x12)
+### 4.2 Session Registration (RELEASE: 0x12)
 
 Used for session registration and deregistration.
 
@@ -252,7 +252,7 @@ Used for session registration and deregistration.
 
 **Response (16 bytes):** Fixed-length ACK packet.
 
-### 4.3 Client Configuration (CONFIGURE: 0x11)
+### 4.3 Reserve Scanner (RESERVE: 0x11)
 
 The client sends its information (IP address, notification port, current time, identity) to the scanner. Used for both pairing and normal connection.
 
@@ -301,7 +301,7 @@ The client sends its information (IP address, notification port, current time, i
 | `0x00000000` | Accepted (pairing success / session established) |
 | `0xFFFFFFFD` (-3) | Rejected (invalid identity) |
 
-### 4.4 Status Check (STATUS: 0x30)
+### 4.4 Wi-Fi Status Check (GET_WIFI_STATUS: 0x30)
 
 Used for connection health checks and post-scan status retrieval.
 
@@ -329,7 +329,7 @@ Used for connection health checks and post-scan status retrieval.
 
 ### 4.5 Pairing Protocol
 
-Protocol for initial pairing between scanner and client. Uses password-based authentication; no physical button press required. After successful pairing, the identity is stored and included in subsequent CONFIGURE requests to establish sessions.
+Protocol for initial pairing between scanner and client. Uses password-based authentication; no physical button press required. After successful pairing, the identity is stored and included in subsequent RESERVE requests to establish sessions.
 
 #### 4.5.1 Identity Derivation Algorithm
 
@@ -378,7 +378,7 @@ sequenceDiagram
     S->>C: Device info response
 
     Note over C,S: Phase 2: Authentication
-    C->>S: TCP:53219 CONFIGURE (cmd=0x11, identity=derived value)
+    C->>S: TCP:53219 RESERVE (cmd=0x11, identity=derived value)
     alt Correct password
         S->>C: Response (status=0x00000000, accepted)
     else Wrong password
@@ -392,8 +392,8 @@ sequenceDiagram
     C->>S: TCP:53218 CONFIG(cmd=0x08) Set configuration
 
     Note over C,S: Phase 4: Registration
-    C->>S: TCP:53219 STATUS (cmd=0x30)
-    C->>S: TCP:53219 REGISTER (cmd=0x12)
+    C->>S: TCP:53219 GET_WIFI_STATUS (cmd=0x30)
+    C->>S: TCP:53219 RELEASE (cmd=0x12)
     S->>C: Registration ACK
 ```
 
@@ -914,22 +914,22 @@ stateDiagram-v2
     [*] --> Discovery: UDP Discovery
 
     state "First-time Pairing" as Pairing {
-        Discovery --> Authenticate: CONFIGURE (with identity)
+        Discovery --> Authenticate: RESERVE (with identity)
         Authenticate --> Rejected: status=0xFFFFFFFD
         Rejected --> [*]: Auth failed
         Authenticate --> Accepted: status=0x00000000
     }
 
     state "Normal Connection" as Normal {
-        Discovery --> Configuration: CONFIGURE
+        Discovery --> Configuration: RESERVE
     }
 
     Accepted --> Heartbeat: Start UDP heartbeat
     Configuration --> Heartbeat
 
     Heartbeat --> DeviceSetup: Device info + params + config
-    DeviceSetup --> StatusCheck: STATUS
-    StatusCheck --> Register: REGISTER (pairing)
+    DeviceSetup --> StatusCheck: GET_WIFI_STATUS
+    StatusCheck --> Register: RELEASE (pairing)
     StatusCheck --> Idle: Normal connection
     Register --> Idle
 
@@ -942,7 +942,7 @@ stateDiagram-v2
     PageTransfer --> Idle: All pages done
 
     Idle --> Disconnecting: Disconnect request
-    Disconnecting --> [*]: REGISTER (deregister)
+    Disconnecting --> [*]: RELEASE (deregister)
 ```
 
 ---
