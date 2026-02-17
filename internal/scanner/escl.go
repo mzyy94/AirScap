@@ -7,6 +7,7 @@ import (
 	"log/slog"
 
 	"github.com/OpenPrinting/go-mfp/abstract"
+	"github.com/OpenPrinting/go-mfp/proto/escl"
 	"github.com/OpenPrinting/go-mfp/util/generic"
 	"github.com/OpenPrinting/go-mfp/util/uuid"
 
@@ -159,6 +160,14 @@ func (a *ESCLAdapter) CheckADFStatus() (bool, error) {
 	}
 	a.adfEmpty = !hasPaper
 	return hasPaper, nil
+}
+
+// ScannerState returns the current eSCL scanner state based on connection status.
+func (a *ESCLAdapter) ScannerState() escl.ScannerState {
+	if !a.scanner.Online() {
+		return escl.ScannerDown
+	}
+	return escl.ScannerIdle
 }
 
 // Close closes the scanner connection.

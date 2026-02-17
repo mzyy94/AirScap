@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/mzyy94/airscap/internal/vens"
@@ -13,6 +14,7 @@ import (
 
 // Scanner is a high-level interface for ScanSnap operations.
 type Scanner struct {
+	mu          sync.Mutex
 	host        string
 	dataPort    uint16
 	controlPort uint16
@@ -23,6 +25,9 @@ type Scanner struct {
 	connected   bool
 	name        string
 	serial      string
+
+	reconnCancel context.CancelFunc
+	reconnDone   chan struct{}
 }
 
 // New creates a Scanner targeting the given host with a pre-computed identity.
@@ -40,9 +45,24 @@ func New(host string, dataPort, controlPort uint16, identity string) *Scanner {
 	}
 }
 
+// Online returns whether the scanner session is active (thread-safe).
+func (s *Scanner) Online() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connected
+}
+
 // Connect establishes a session with the scanner: discovery, heartbeat, configure, data setup.
-// Matches the Python connect() flow — Register is NOT called here (only needed for initial pairing).
 func (s *Scanner) Connect(ctx context.Context) error {
+	// Clean up any previous connection state (idempotent for reconnection)
+	s.mu.Lock()
+	if s.heartbeat != nil {
+		s.heartbeat.Stop()
+		s.heartbeat = nil
+	}
+	s.connected = false
+	s.mu.Unlock()
+
 	// Step 1: UDP discovery to let the scanner know our token
 	slog.Debug("discovery...", "host", s.host)
 	info, err := vens.FindScanner(ctx, vens.DiscoveryOptions{
@@ -69,7 +89,9 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("heartbeat: %w", err)
 	}
+	s.mu.Lock()
 	s.heartbeat = hb
+	s.mu.Unlock()
 	time.Sleep(300 * time.Millisecond)
 
 	// Step 3: Configure session
@@ -77,11 +99,17 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	localIP := vens.GetLocalIP()
 	accepted, err := s.control.Configure(s.token, localIP, vens.ClientNotifyPort, s.identity)
 	if err != nil {
-		s.heartbeat.Stop()
+		hb.Stop()
+		s.mu.Lock()
+		s.heartbeat = nil
+		s.mu.Unlock()
 		return fmt.Errorf("configure: %w", err)
 	}
 	if !accepted {
-		s.heartbeat.Stop()
+		hb.Stop()
+		s.mu.Lock()
+		s.heartbeat = nil
+		s.mu.Unlock()
 		return fmt.Errorf("pairing rejected — wrong password/identity")
 	}
 
@@ -92,7 +120,10 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		slog.Warn("get device info failed, retrying in 2s", "err", err)
 		time.Sleep(2 * time.Second)
 		if _, err := dataCh.GetDeviceInfo(); err != nil {
-			s.heartbeat.Stop()
+			hb.Stop()
+			s.mu.Lock()
+			s.heartbeat = nil
+			s.mu.Unlock()
 			return fmt.Errorf("device info: %w", err)
 		}
 	}
@@ -111,16 +142,18 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		slog.Warn("set config failed", "err", err)
 	}
 
+	s.mu.Lock()
 	s.connected = true
 	s.name = info.Name
 	s.serial = info.Serial
+	s.mu.Unlock()
 	slog.Info("connected to scanner", "host", s.host, "name", info.Name, "serial", info.Serial)
 	return nil
 }
 
 // Scan executes a scan with the given config and returns pages.
 func (s *Scanner) Scan(cfg vens.ScanConfig, onPage func(vens.Page)) ([]vens.Page, error) {
-	if !s.connected {
+	if !s.Online() {
 		return nil, fmt.Errorf("scanner not connected")
 	}
 	slog.Info("starting scan", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex, "paperSize", cfg.PaperSize)
@@ -149,16 +182,94 @@ func (s *Scanner) Disconnect() {
 			slog.Warn("deregister failed", "err", err)
 		}
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if s.heartbeat != nil {
 		s.heartbeat.Stop()
+		s.heartbeat = nil
 	}
 	s.connected = false
 	slog.Info("disconnected from scanner")
 }
 
+// markOffline stops the heartbeat and marks the scanner as disconnected.
+func (s *Scanner) markOffline() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.connected {
+		return
+	}
+	slog.Warn("scanner went offline", "host", s.host)
+	if s.heartbeat != nil {
+		s.heartbeat.Stop()
+		s.heartbeat = nil
+	}
+	s.connected = false
+}
+
+// StartReconnectLoop starts a background goroutine that monitors scanner
+// health and reconnects automatically when the connection is lost.
+func (s *Scanner) StartReconnectLoop(ctx context.Context) {
+	ctx, cancel := context.WithCancel(ctx)
+	s.reconnCancel = cancel
+	s.reconnDone = make(chan struct{})
+	go s.reconnectLoop(ctx)
+}
+
+// StopReconnectLoop stops the reconnection goroutine and waits for it to exit.
+func (s *Scanner) StopReconnectLoop() {
+	if s.reconnCancel != nil {
+		s.reconnCancel()
+		<-s.reconnDone
+	}
+}
+
+func (s *Scanner) reconnectLoop(ctx context.Context) {
+	defer close(s.reconnDone)
+
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if s.Online() {
+				s.healthCheck()
+			} else {
+				s.tryReconnect(ctx)
+			}
+		}
+	}
+}
+
+func (s *Scanner) healthCheck() {
+	s.mu.Lock()
+	ctrl := s.control
+	token := s.token
+	s.mu.Unlock()
+
+	if ctrl == nil {
+		s.markOffline()
+		return
+	}
+	if _, err := ctrl.CheckStatus(token); err != nil {
+		slog.Warn("health check failed", "err", err)
+		s.markOffline()
+	}
+}
+
+func (s *Scanner) tryReconnect(ctx context.Context) {
+	slog.Info("attempting reconnection...", "host", s.host)
+	if err := s.Connect(ctx); err != nil {
+		slog.Debug("reconnect failed", "host", s.host, "err", err)
+	}
+}
+
 // CheckADFStatus queries the scanner's ADF and returns whether paper is present.
 func (s *Scanner) CheckADFStatus() (bool, error) {
-	if !s.connected {
+	if !s.Online() {
 		return false, fmt.Errorf("scanner not connected")
 	}
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
@@ -169,10 +280,15 @@ func (s *Scanner) CheckADFStatus() (bool, error) {
 func (s *Scanner) Host() string { return s.host }
 
 // Name returns the scanner's device name from discovery.
-func (s *Scanner) Name() string { return strings.TrimSpace(s.name) }
+func (s *Scanner) Name() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return strings.TrimSpace(s.name)
+}
 
 // Serial returns the scanner's serial number from discovery.
-func (s *Scanner) Serial() string { return s.serial }
-
-// Connected returns whether the scanner session is active.
-func (s *Scanner) Connected() bool { return s.connected }
+func (s *Scanner) Serial() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.serial
+}

@@ -73,10 +73,13 @@ func main() {
 	// Create and connect scanner
 	sc := scanner.New(scannerIP, vens.DefaultDataPort, vens.DefaultControlPort, identity)
 	if err := sc.Connect(ctx); err != nil {
-		slog.Error("scanner connection failed", "err", err)
-		os.Exit(1)
+		slog.Warn("initial scanner connection failed, will retry in background", "err", err)
 	}
 	defer sc.Disconnect()
+
+	// Start reconnection loop (health check + auto-reconnect)
+	sc.StartReconnectLoop(ctx)
+	defer sc.StopReconnectLoop()
 
 	// Use discovered device name if not explicitly set
 	if deviceName == "" {
@@ -95,10 +98,15 @@ func main() {
 		BasePath: "",
 		Hooks: escl.ServerHooks{
 			OnScannerStatusResponse: func(_ *transport.ServerQuery, status *escl.ScannerStatus) *escl.ScannerStatus {
+				state := adapter.ScannerState()
+				status.State = state
+				if state == escl.ScannerDown {
+					return status
+				}
 				hasPaper, err := adapter.CheckADFStatus()
 				if err != nil {
 					slog.Warn("ADF status check failed", "err", err)
-					return status // keep default ScannerAdfProcessing
+					return status
 				}
 				if hasPaper {
 					status.ADFState = optional.New(escl.ScannerAdfLoaded)
