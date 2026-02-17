@@ -100,7 +100,7 @@ The control channel (TCP:53219) and data channel (TCP:53218) interpret bytes at 
 
 | Offset | Size | Field |
 |--------|------|-------|
-| 8 | 4 | Command code (0x11, 0x12, 0x30) |
+| 8 | 4 | Command code (0x11–0x15, 0x30–0x31, 0x50–0x51, 0x62) |
 | 12 | 4 | Flags / Status |
 | 16 | 8 | Session token |
 | 24+ | var | Command parameters |
@@ -232,7 +232,14 @@ Used for session management. At the start of every TCP connection, the server se
 |-------------|------|-----------|-------------|
 | `0x00000011` | RESERVE | C→S | Reserve scanner (send client configuration) |
 | `0x00000012` | RELEASE | C→S | Release scanner (session registration / deregistration) |
+| `0x00000013` | GET_DEV_INFO | C→S | Get device info |
+| `0x00000014` | SET_DEV_INFO | C→S | Set device info |
+| `0x00000015` | UPDATE_PSW | C→S | Update scanner password |
 | `0x00000030` | GET_WIFI_STATUS | C→S | Wi-Fi status check |
+| `0x00000031` | SET_WIFI_MODE | C→S | Set Wi-Fi mode (infrastructure / direct) |
+| `0x00000050` | XFER_DATA | C→S | Data transfer |
+| `0x00000051` | FIRM_UPDATE | C→S | Firmware update |
+| `0x00000062` | SET_START_MODE | C→S | Set scanner start mode |
 
 ### 4.2 Session Registration (RELEASE: 0x12)
 
