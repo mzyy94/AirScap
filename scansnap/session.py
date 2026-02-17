@@ -124,7 +124,7 @@ class ControlSession:
 
     async def deregister(self, token: bytes) -> bytes:
         """Deregister from the scanner."""
-        req = ReleaseRequest(token=token, action=1)
+        req = ReleaseRequest(token=token, action=0)
         log.info("Deregistering...")
         reader, writer = await self._connect()
         try:

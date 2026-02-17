@@ -247,8 +247,15 @@ Used for session registration and deregistration.
 | 8 | 4 | Command | `0x00000012` |
 | 12 | 4 | Flags | `0x00000000` |
 | 16 | 8 | Token | Session token |
-| 24 | 4 | Action | `0x00000001` |
+| 24 | 4 | Action | `0x00000000`=normal release, `0x00000001`=enforce release |
 | 28 | 4 | Reserved | `0x00000000` |
+
+**Action Values:**
+
+| Value | Meaning |
+|-------|---------|
+| `0x00000000` | NORMAL — Normal release (used for deregistration) |
+| `0x00000001` | ENFORCE — Forced release (used for session registration) |
 
 **Response (16 bytes):** Fixed-length ACK packet.
 

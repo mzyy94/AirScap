@@ -147,7 +147,7 @@ func (s *ControlSession) Deregister(token [8]byte) error {
 	}
 	defer conn.Close()
 
-	req := MarshalReleaseRequest(token, 1)
+	req := MarshalReleaseRequest(token, 0)
 	slog.Debug("deregister request", "bytes", len(req), "hex", hex.EncodeToString(req))
 	if _, err := conn.Write(req); err != nil {
 		return fmt.Errorf("deregister send: %w", err)
