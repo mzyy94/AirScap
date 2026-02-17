@@ -230,7 +230,7 @@ class WelcomePacket:
 class ReleaseRequest:
     """Client → server on control channel, 32 bytes."""
     token: bytes = b"\x00" * 8
-    action: int = 1  # 1 = register
+    action: int = 1  # 0 = NORMAL (deregister), 1 = ENFORCE (register)
 
     def pack(self) -> bytes:
         buf = bytearray(32)
