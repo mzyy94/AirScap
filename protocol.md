@@ -479,8 +479,7 @@ sequenceDiagram
 | 40 | 2 | Command Echo | `0x0006` |
 | 42 | 4 | Device Version | デバイスバージョン |
 | 46 | 2 | Reserved | |
-| 48 | 1 | Name Length | デバイス名の長さ |
-| 49 | 32 | Device Name | デバイス名（ASCII） |
+| 48 | 33 | Device Name | デバイス名（ASCII、null-terminated） |
 | 81 | 2 | Firmware Major | ファームウェアメジャーバージョン |
 | 83 | 1 | Firmware Minor | ファームウェアマイナーバージョン |
 | 84 | 52 | Reserved | ゼロ埋め |

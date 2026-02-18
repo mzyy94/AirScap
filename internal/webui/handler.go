@@ -80,7 +80,7 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Name:         h.sc.Name(),
 			Serial:       h.sc.Serial(),
 			Host:         h.sc.Host(),
-			Manufacturer: "Fujitsu",
+			Manufacturer: h.sc.Manufacturer(),
 		},
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 	}

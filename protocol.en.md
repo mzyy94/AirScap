@@ -479,8 +479,7 @@ A general-purpose command whose behavior varies by sub-command.
 | 40 | 2 | Command Echo | `0x0006` |
 | 42 | 4 | Device Version | Device version |
 | 46 | 2 | Reserved | |
-| 48 | 1 | Name Length | Device name length |
-| 49 | 32 | Device Name | Device name (ASCII) |
+| 48 | 33 | Device Name | Device name (ASCII, null-terminated) |
 | 81 | 2 | Firmware Major | Firmware major version |
 | 83 | 1 | Firmware Minor | Firmware minor version |
 | 84 | 52 | Reserved | Zero-filled |

@@ -25,6 +25,7 @@ type Scanner struct {
 	connected   bool
 	name        string
 	serial      string
+	deviceName  string // full device name with manufacturer from TCP GET_SET sub=0x12
 
 	reconnCancel context.CancelFunc
 	reconnDone   chan struct{}
@@ -116,10 +117,12 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	// Step 4: Data channel setup (with status check interleaved, matching Python flow)
 	slog.Debug("data channel setup...", "host", s.host, "port", s.dataPort)
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
-	if _, err := dataCh.GetDeviceInfo(); err != nil {
+	devInfo, err := dataCh.GetDeviceInfo()
+	if err != nil {
 		slog.Warn("get device info failed, retrying in 2s", "err", err)
 		time.Sleep(2 * time.Second)
-		if _, err := dataCh.GetDeviceInfo(); err != nil {
+		devInfo, err = dataCh.GetDeviceInfo()
+		if err != nil {
 			hb.Stop()
 			s.mu.Lock()
 			s.heartbeat = nil
@@ -146,8 +149,11 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	s.connected = true
 	s.name = info.Name
 	s.serial = info.Serial
+	if devInfo != nil {
+		s.deviceName = devInfo.DeviceName
+	}
 	s.mu.Unlock()
-	slog.Info("connected to scanner", "host", s.host, "name", info.Name, "serial", info.Serial)
+	slog.Info("connected to scanner", "host", s.host, "name", info.Name, "serial", info.Serial, "deviceName", s.deviceName)
 	return nil
 }
 
@@ -291,4 +297,23 @@ func (s *Scanner) Serial() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.serial
+}
+
+// DeviceName returns the full device name from TCP GET_SET sub=0x12
+func (s *Scanner) DeviceName() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.deviceName
+}
+
+// Manufacturer extracts the manufacturer from the device name
+func (s *Scanner) Manufacturer() string {
+	s.mu.Lock()
+	dn := s.deviceName
+	s.mu.Unlock()
+	if dn == "" {
+		return ""
+	}
+	name, _, _ := strings.Cut(dn, " ")
+	return name
 }

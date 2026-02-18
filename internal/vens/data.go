@@ -99,14 +99,18 @@ func readResponse(r io.Reader) ([]byte, error) {
 }
 
 // GetDeviceInfo queries device identity (cmd=0x06, sub=0x12).
-func (d *DataChannel) GetDeviceInfo() ([]byte, error) {
+func (d *DataChannel) GetDeviceInfo() (*DataDeviceInfo, error) {
 	slog.Debug("getting device info...")
 	resp, err := d.request(MarshalGetDeviceInfo(d.token))
 	if err != nil {
 		return nil, err
 	}
-	slog.Debug("device info OK", "bytes", len(resp))
-	return resp, nil
+	info, err := ParseDataDeviceInfo(resp)
+	if err != nil {
+		return nil, err
+	}
+	slog.Debug("device info OK", "deviceName", info.DeviceName, "firmware", fmt.Sprintf("%d.%d", info.FirmwareMajor, info.FirmwareMinor))
+	return info, nil
 }
 
 // GetScanParams queries scanner capabilities (cmd=0x06, sub=0x90).

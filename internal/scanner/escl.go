@@ -74,10 +74,15 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		serial = a.scanner.Host()
 	}
 
+	manufacturer := a.scanner.Manufacturer()
+	if manufacturer == "" {
+		manufacturer = "Unknown"
+	}
+
 	return &abstract.ScannerCapabilities{
 		UUID:            deviceUUID,
 		MakeAndModel:    name,
-		Manufacturer:    "Fujitsu",
+		Manufacturer:    manufacturer,
 		SerialNumber:    serial,
 		DocumentFormats: []string{"image/jpeg", "image/tiff", "application/pdf"},
 		ADFCapacity:     50,

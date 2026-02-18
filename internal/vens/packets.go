@@ -355,6 +355,22 @@ func marshalDataRequest(token [8]byte, command uint32, params []byte) []byte {
 	return append(hdr, params...)
 }
 
+// ParseDataDeviceInfo parses a 136-byte TCP GET_SET sub=0x12 response.
+// Extracts device name (offset 48, 33 bytes) and firmware version.
+func ParseDataDeviceInfo(data []byte) (*DataDeviceInfo, error) {
+	if len(data) < 136 {
+		return nil, fmt.Errorf("device info response too short: %d bytes", len(data))
+	}
+	name := nullTerminated(data[48:81])
+	fwMajor := binary.BigEndian.Uint16(data[81:83])
+	fwMinor := data[83]
+	return &DataDeviceInfo{
+		DeviceName:    name,
+		FirmwareMajor: fwMajor,
+		FirmwareMinor: fwMinor,
+	}, nil
+}
+
 // MarshalGetDeviceInfo builds cmd=0x06, sub=0x12.
 func MarshalGetDeviceInfo(token [8]byte) []byte {
 	p := newPacket(28)
