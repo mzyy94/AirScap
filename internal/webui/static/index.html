@@ -107,7 +107,7 @@
           </div>
           <div class="status-row">
             <span class="is-size-7 has-text-grey">最終更新</span>
-            <span class="is-size-7 has-text-grey-light" x-text="relativeTime(status?.updatedAt)"></span>
+            <span class="is-size-7 has-text-grey-light" x-text="relativeTime(status?.updatedAt, tick)"></span>
           </div>
         </div>
       </div>
@@ -184,8 +184,9 @@
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
           </span>
           <p class="card-header-title">スキャン設定</p>
-          <span class="card-header-icon">
+          <span class="card-header-icon" style="gap: 0.25rem;">
             <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
+            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7">保存失敗</span>
           </span>
         </header>
         <div class="card-content">
@@ -260,9 +261,11 @@
     function app() {
       return {
         status: null,
+        tick: 0,
         scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf' },
         settingsReady: false,
         settingsSaved: false,
+        settingsError: false,
         _saveTimer: null,
 
         async init() {
@@ -271,6 +274,7 @@
           await this.loadSettings();
           this.settingsReady = true;
           setInterval(() => this.refresh(), 3000);
+          setInterval(() => this.tick++, 1000);
         },
 
         async refresh() {
@@ -281,6 +285,9 @@
             }
           } catch (e) {
             console.error('status fetch failed', e);
+            if (this.status) {
+              this.status = { ...this.status, online: false, state: 'offline' };
+            }
           }
         },
 
@@ -340,11 +347,17 @@
               body: JSON.stringify(body),
             });
             if (resp.ok) {
+              this.settingsError = false;
               this.settingsSaved = true;
               setTimeout(() => this.settingsSaved = false, 2000);
+            } else {
+              this.settingsError = true;
+              setTimeout(() => this.settingsError = false, 3000);
             }
           } catch (e) {
             console.error('settings save failed', e);
+            this.settingsError = true;
+            setTimeout(() => this.settingsError = false, 3000);
           }
         },
 
@@ -360,7 +373,7 @@
           }[fmt] || fmt;
         },
 
-        relativeTime(isoStr) {
+        relativeTime(isoStr, _tick) {
           if (!isoStr) return '';
           const seconds = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
           if (seconds < 10) return 'たった今';
