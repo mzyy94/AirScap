@@ -254,25 +254,62 @@
         </header>
         <div class="card-content">
 
-          <div class="field">
-            <label class="label is-small">保存方法</label>
-            <div class="control">
-              <div class="select is-fullwidth">
-                <select x-model="scanConfig.saveType" @change="debounceSaveSettings()">
-                  <option value="none">保存しない</option>
-                  <option value="local">ローカルフォルダ</option>
-                </select>
+          <div class="tabs is-toggle is-centered mb-4">
+            <ul>
+              <li :class="scanConfig.saveType === 'none' ? 'is-active' : ''">
+                <a @click="scanConfig.saveType = 'none'; debounceSaveSettings()">
+                  <span>保存しない</span>
+                </a>
+              </li>
+              <li :class="scanConfig.saveType === 'local' ? 'is-active' : ''">
+                <a @click="scanConfig.saveType = 'local'; debounceSaveSettings()">
+                  <span class="icon is-small"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
+                  <span>ローカルフォルダ</span>
+                </a>
+              </li>
+              <li :class="scanConfig.saveType === 'ftp' ? 'is-active' : ''">
+                <a @click="scanConfig.saveType = 'ftp'; debounceSaveSettings()">
+                  <span class="icon is-small"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg></span>
+                  <span>FTP</span>
+                </a>
+              </li>
+            </ul>
+          </div>
+
+          <div x-show="scanConfig.saveType === 'local'" x-transition>
+            <div class="field">
+              <label class="label is-small">保存ディレクトリ</label>
+              <div class="control">
+                <input class="input" type="text" x-model="scanConfig.savePath"
+                  placeholder="/path/to/scans" @change="debounceSaveSettings()">
               </div>
+              <p class="help">スキャナのボタンを押した時にファイルを保存するディレクトリ</p>
             </div>
           </div>
 
-          <div class="field" x-show="scanConfig.saveType === 'local'" x-transition>
-            <label class="label is-small">保存ディレクトリ</label>
-            <div class="control">
-              <input class="input" type="text" x-model="scanConfig.savePath"
-                placeholder="/path/to/scans" @change="debounceSaveSettings()">
+          <div x-show="scanConfig.saveType === 'ftp'" x-transition>
+            <div class="field">
+              <label class="label is-small">FTP アドレス</label>
+              <div class="control">
+                <input class="input" type="text" x-model="scanConfig.ftpHost"
+                  placeholder="ftp.example.com:21" @change="debounceSaveSettings()">
+              </div>
+              <p class="help">ホスト名:ポート（ポート省略時は 21）</p>
             </div>
-            <p class="help">スキャナのボタンを押した時にファイルを保存するディレクトリ</p>
+            <div class="field">
+              <label class="label is-small">ユーザー名</label>
+              <div class="control">
+                <input class="input" type="text" x-model="scanConfig.ftpUser"
+                  placeholder="anonymous" @change="debounceSaveSettings()">
+              </div>
+            </div>
+            <div class="field">
+              <label class="label is-small">パスワード</label>
+              <div class="control">
+                <input class="input" type="password" x-model="scanConfig.ftpPassword"
+                  @change="debounceSaveSettings()">
+              </div>
+            </div>
           </div>
 
         </div>
@@ -330,7 +367,7 @@
       return {
         status: null,
         tick: 0,
-        scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '' },
+        scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '' },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
         settingsSaved: false,
@@ -371,6 +408,9 @@
               format: s.format || 'application/pdf',
               saveType: s.saveType || 'none',
               savePath: s.savePath || '',
+              ftpHost: s.ftpHost || '',
+              ftpUser: s.ftpUser || '',
+              ftpPassword: s.ftpPassword || '',
             };
             this.clampToCapabilities();
             this.settingsReady = true;
@@ -413,6 +453,9 @@
               format: this.scanConfig.format,
               saveType: this.scanConfig.saveType,
               savePath: this.scanConfig.savePath,
+              ftpHost: this.scanConfig.ftpHost,
+              ftpUser: this.scanConfig.ftpUser,
+              ftpPassword: this.scanConfig.ftpPassword,
             };
             const resp = await fetch('api/settings', {
               method: 'PUT',

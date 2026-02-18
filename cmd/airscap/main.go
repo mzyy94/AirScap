@@ -132,10 +132,22 @@ func main() {
 				slog.Warn("save path not configured, ignoring button press")
 				return
 			}
+			if s.SaveType == "ftp" && s.FTPHost == "" {
+				slog.Warn("FTP host not configured, ignoring button press")
+				return
+			}
 			cfg := scanner.SettingsToScanConfig(s)
 			scanStatus.SetScanning(true)
-			pages, err := scanner.RunSaveJob(sc, cfg, s.Format, s.SavePath)
-			scanStatus.SetResult(err, pages, s.SavePath)
+			var pages int
+			var err error
+			switch s.SaveType {
+			case "local":
+				pages, err = scanner.RunSaveJob(sc, cfg, s.Format, s.SavePath)
+				scanStatus.SetResult(err, pages, s.SavePath)
+			case "ftp":
+				pages, err = scanner.RunFTPJob(sc, cfg, s.Format, s)
+				scanStatus.SetResult(err, pages, s.FTPHost)
+			}
 			if err != nil {
 				slog.Error("button scan failed", "err", err)
 			}

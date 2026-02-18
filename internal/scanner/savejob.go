@@ -1,12 +1,16 @@
 package scanner
 
 import (
+	"bytes"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/jlaffaye/ftp"
 
 	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/vens"
@@ -154,6 +158,104 @@ func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string
 			}
 		}
 		slog.Info("scan saved as TIFF files", "path", savePath, "pages", len(pages))
+	}
+
+	return len(pages), nil
+}
+
+// RunFTPJob executes a scan and uploads the result to an FTP server.
+func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Settings) (int, error) {
+	host := s.FTPHost
+	if _, _, err := net.SplitHostPort(host); err != nil {
+		host = net.JoinHostPort(host, "21")
+	}
+
+	slog.Info("button scan starting (FTP)", "format", format, "host", host)
+	pages, err := sc.Scan(cfg, nil)
+	if err != nil {
+		return len(pages), fmt.Errorf("scan: %w", err)
+	}
+	if len(pages) == 0 {
+		return 0, fmt.Errorf("scan returned no pages")
+	}
+
+	conn, err := ftp.Dial(host, ftp.DialWithTimeout(10*time.Second))
+	if err != nil {
+		return len(pages), fmt.Errorf("FTP connect: %w", err)
+	}
+	defer conn.Quit()
+
+	user := s.FTPUser
+	if user == "" {
+		user = "anonymous"
+	}
+	if err := conn.Login(user, s.FTPPassword); err != nil {
+		return len(pages), fmt.Errorf("FTP login: %w", err)
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	dpi := vens.QualityDPI[cfg.Quality]
+	if dpi == 0 {
+		dpi = 300
+	}
+
+	isBW := cfg.ColorMode == vens.ColorBW
+
+	switch {
+	case format == "application/pdf" && !isBW:
+		// Write PDF to temp file, then upload
+		tmpFile, err := os.CreateTemp("", "scan_*.pdf")
+		if err != nil {
+			return len(pages), fmt.Errorf("create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+		defer os.Remove(tmpPath)
+
+		if err := WritePDF(pages, dpi, tmpPath); err != nil {
+			return len(pages), fmt.Errorf("write PDF: %w", err)
+		}
+		data, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return len(pages), fmt.Errorf("read temp PDF: %w", err)
+		}
+		remoteName := fmt.Sprintf("scan_%s.pdf", timestamp)
+		if err := conn.Stor(remoteName, bytes.NewReader(data)); err != nil {
+			return len(pages), fmt.Errorf("FTP upload %s: %w", remoteName, err)
+		}
+		slog.Info("scan uploaded via FTP", "file", remoteName, "pages", len(pages))
+
+	case format == "application/pdf" && isBW:
+		slog.Warn("BW mode with PDF format not supported, uploading as TIFF files")
+		for i, p := range pages {
+			remoteName := fmt.Sprintf("scan_%s_%03d.tiff", timestamp, i+1)
+			if err := conn.Stor(remoteName, bytes.NewReader(p.JPEG)); err != nil {
+				return len(pages), fmt.Errorf("FTP upload TIFF page %d: %w", i+1, err)
+			}
+		}
+		slog.Info("scan uploaded via FTP as TIFF", "pages", len(pages))
+
+	case format == "image/jpeg":
+		for i, p := range pages {
+			ext := "jpg"
+			if isBW {
+				ext = "tiff"
+			}
+			remoteName := fmt.Sprintf("scan_%s_%03d.%s", timestamp, i+1, ext)
+			if err := conn.Stor(remoteName, bytes.NewReader(p.JPEG)); err != nil {
+				return len(pages), fmt.Errorf("FTP upload page %d: %w", i+1, err)
+			}
+		}
+		slog.Info("scan uploaded via FTP", "pages", len(pages))
+
+	default:
+		for i, p := range pages {
+			remoteName := fmt.Sprintf("scan_%s_%03d.tiff", timestamp, i+1)
+			if err := conn.Stor(remoteName, bytes.NewReader(p.JPEG)); err != nil {
+				return len(pages), fmt.Errorf("FTP upload page %d: %w", i+1, err)
+			}
+		}
+		slog.Info("scan uploaded via FTP as TIFF", "pages", len(pages))
 	}
 
 	return len(pages), nil
