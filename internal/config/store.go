@@ -14,6 +14,8 @@ type Settings struct {
 	Resolution int    `json:"resolution"`
 	Duplex     bool   `json:"duplex"`
 	Format     string `json:"format"`
+	SaveType   string `json:"saveType"` // "none", "local" (future: "webhook", "ftp", ...)
+	SavePath   string `json:"savePath"` // directory path when SaveType="local"
 }
 
 // DefaultSettings returns the default scan settings.
@@ -23,6 +25,8 @@ func DefaultSettings() Settings {
 		Resolution: 300,
 		Duplex:     false,
 		Format:     "application/pdf",
+		SaveType:   "none",
+		SavePath:   "",
 	}
 }
 
@@ -45,6 +49,11 @@ func NewStore(dataDir string) (*Store, error) {
 	}
 	s.load()
 	return s, nil
+}
+
+// NewMemoryStore creates a Store that keeps settings in memory only (no file persistence).
+func NewMemoryStore() *Store {
+	return &Store{settings: DefaultSettings()}
 }
 
 // Get returns a copy of the current settings.
@@ -76,6 +85,9 @@ func (s *Store) load() {
 }
 
 func (s *Store) save() error {
+	if s.path == "" {
+		return nil // memory-only mode
+	}
 	data, err := json.MarshalIndent(s.settings, "", "  ")
 	if err != nil {
 		return err

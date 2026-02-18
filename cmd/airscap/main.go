@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -95,7 +96,7 @@ func main() {
 	// Create eSCL adapter
 	adapter := scanner.NewESCLAdapter(sc)
 
-	// Initialize settings store (optional, requires AIRSCAP_DATA_DIR)
+	// Initialize settings store
 	var settingsStore *config.Store
 	if dataDir != "" {
 		var err error
@@ -105,7 +106,47 @@ func main() {
 			os.Exit(1)
 		}
 		slog.Info("settings store initialized", "path", dataDir)
+	} else {
+		settingsStore = config.NewMemoryStore()
+		slog.Info("settings store initialized (memory-only, set AIRSCAP_DATA_DIR to persist)")
 	}
+
+	// Scan job status (shared with WebUI)
+	scanStatus := &scanner.ScanJobStatus{}
+
+	// Button listener: trigger scan on physical button press
+	var scanMu sync.Mutex
+	onButtonPress := func() {
+		if !scanMu.TryLock() {
+			slog.Warn("scan already in progress, ignoring button press")
+			return
+		}
+		go func() {
+			defer scanMu.Unlock()
+			s := settingsStore.Get()
+			if s.SaveType == "none" || s.SaveType == "" {
+				slog.Info("save type is 'none', ignoring button press")
+				return
+			}
+			if s.SaveType == "local" && s.SavePath == "" {
+				slog.Warn("save path not configured, ignoring button press")
+				return
+			}
+			cfg := scanner.SettingsToScanConfig(s)
+			scanStatus.SetScanning(true)
+			pages, err := scanner.RunSaveJob(sc, cfg, s.Format, s.SavePath)
+			scanStatus.SetResult(err, pages, s.SavePath)
+			if err != nil {
+				slog.Error("button scan failed", "err", err)
+			}
+		}()
+	}
+
+	btnListener := scanner.NewButtonListener(onButtonPress)
+	if err := btnListener.Start(ctx); err != nil {
+		slog.Warn("button listener failed to start", "err", err)
+	}
+	defer btnListener.Stop()
 
 	// Create eSCL HTTP server (BasePath="" so it handles paths directly)
 	esclServer := escl.NewAbstractServer(escl.AbstractServerOptions{
@@ -137,7 +178,7 @@ func main() {
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
 	// Web UI for status and settings
-	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore)))
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 

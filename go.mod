@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/OpenPrinting/go-mfp v0.0.0-20260213072225-403537e236b1
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/grandcat/zeroconf v1.0.0
 )
 

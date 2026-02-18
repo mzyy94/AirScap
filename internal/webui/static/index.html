@@ -240,6 +240,74 @@
         </div>
       </div>
 
+      <!-- Save Destination -->
+      <div class="card mb-4" x-cloak x-show="settingsReady">
+        <header class="card-header">
+          <span class="card-header-icon">
+            <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
+          </span>
+          <p class="card-header-title">保存先</p>
+          <span class="card-header-icon" style="gap: 0.25rem;">
+            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
+            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7">保存失敗</span>
+          </span>
+        </header>
+        <div class="card-content">
+
+          <div class="field">
+            <label class="label is-small">保存方法</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="scanConfig.saveType" @change="debounceSaveSettings()">
+                  <option value="none">保存しない</option>
+                  <option value="local">ローカルフォルダ</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" x-show="scanConfig.saveType === 'local'" x-transition>
+            <label class="label is-small">保存ディレクトリ</label>
+            <div class="control">
+              <input class="input" type="text" x-model="scanConfig.savePath"
+                placeholder="/path/to/scans" @change="debounceSaveSettings()">
+            </div>
+            <p class="help">スキャナのボタンを押した時にファイルを保存するディレクトリ</p>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Scan Job Status -->
+      <div class="card mb-4" x-cloak x-show="scanJob.scanning || scanJob.lastScan">
+        <header class="card-header">
+          <span class="card-header-icon">
+            <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></span>
+          </span>
+          <p class="card-header-title">スキャン</p>
+        </header>
+        <div class="card-content">
+          <template x-if="scanJob.scanning">
+            <div class="is-flex is-align-items-center" style="gap: 0.75rem;">
+              <span class="spinner" style="width:1.5rem; height:1.5rem; border-width:2px;"></span>
+              <span class="is-size-7">スキャン中...</span>
+            </div>
+          </template>
+          <template x-if="!scanJob.scanning && scanJob.lastScan && !scanJob.lastError">
+            <div>
+              <span class="tag is-success is-light is-rounded" x-text="scanJob.pages + ' ページ保存完了'"></span>
+              <span class="is-size-7 has-text-grey-light ml-2" x-text="relativeTime(scanJob.lastScan, tick)"></span>
+            </div>
+          </template>
+          <template x-if="!scanJob.scanning && scanJob.lastError">
+            <div>
+              <span class="tag is-danger is-light is-rounded">スキャン失敗</span>
+              <span class="is-size-7 has-text-grey ml-2" x-text="scanJob.lastError"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <!-- eSCL Endpoint -->
       <div class="card mb-4" x-cloak x-show="status?.esclUrl">
         <header class="card-header">
@@ -262,7 +330,8 @@
       return {
         status: null,
         tick: 0,
-        scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf' },
+        scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '' },
+        scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
         settingsSaved: false,
         settingsError: false,
@@ -272,8 +341,7 @@
           await this.refresh();
           await this.$nextTick();
           await this.loadSettings();
-          this.settingsReady = true;
-          setInterval(() => this.refresh(), 3000);
+          setInterval(() => { this.refresh(); this.refreshScanStatus(); }, 3000);
           setInterval(() => this.tick++, 1000);
         },
 
@@ -301,8 +369,11 @@
               resolution: String(s.resolution || 300),
               duplex: s.duplex || false,
               format: s.format || 'application/pdf',
+              saveType: s.saveType || 'none',
+              savePath: s.savePath || '',
             };
             this.clampToCapabilities();
+            this.settingsReady = true;
           } catch (e) {
             console.error('settings load failed', e);
           }
@@ -340,6 +411,8 @@
               resolution: Number(this.scanConfig.resolution),
               duplex: this.scanConfig.duplex,
               format: this.scanConfig.format,
+              saveType: this.scanConfig.saveType,
+              savePath: this.scanConfig.savePath,
             };
             const resp = await fetch('api/settings', {
               method: 'PUT',
@@ -358,6 +431,22 @@
             console.error('settings save failed', e);
             this.settingsError = true;
             setTimeout(() => this.settingsError = false, 3000);
+          }
+        },
+
+        async refreshScanStatus() {
+          try {
+            const resp = await fetch('api/scan/status');
+            if (resp.ok) {
+              const data = await resp.json();
+              this.scanJob.scanning = data.scanning ?? false;
+              this.scanJob.lastError = data.lastError ?? '';
+              this.scanJob.lastScan = data.lastScan ?? '';
+              this.scanJob.pages = data.pages ?? 0;
+              this.scanJob.filePath = data.filePath ?? '';
+            }
+          } catch (e) {
+            // ignore
           }
         },
 
