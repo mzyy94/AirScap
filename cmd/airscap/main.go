@@ -20,6 +20,7 @@ import (
 
 	"github.com/mzyy94/airscap/internal/scanner"
 	"github.com/mzyy94/airscap/internal/vens"
+	"github.com/mzyy94/airscap/internal/webui"
 )
 
 func main() {
@@ -121,6 +122,8 @@ func main() {
 	mux := http.NewServeMux()
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
+	// Web UI for status and scanning
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 
@@ -157,7 +160,8 @@ func main() {
 	// Start HTTP server
 	go func() {
 		localIP := vens.GetLocalIP()
-		slog.Info("eSCL server starting", "addr", addr, "url", fmt.Sprintf("http://%s/eSCL", net.JoinHostPort(localIP, strconv.Itoa(listenPort))))
+		hostPort := net.JoinHostPort(localIP, strconv.Itoa(listenPort))
+		slog.Info("eSCL server starting", "addr", addr, "escl", fmt.Sprintf("http://%s/eSCL", hostPort), "ui", fmt.Sprintf("http://%s/ui/", hostPort))
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {
 			slog.Error("HTTP server error", "err", err)
 			cancel()
