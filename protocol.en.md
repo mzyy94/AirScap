@@ -113,8 +113,9 @@ The control channel (TCP:53219) and data channel (TCP:53218) interpret bytes at 
 | 12 | 4 | Reserved (`0x00000000`) |
 | 16 | 8 | Session token |
 | 24 | 8 | Reserved |
-| 32 | 4 | Command code |
-| 36+ | var | Command parameters |
+| 32 | 4 | CDB Length (SCSI Command Descriptor Block byte count) |
+| 36 | 12 | CDB parameters / Reserved |
+| 48 | CDB Length | SCSI CDB (first byte is the SCSI opcode) |
 
 **Data Channel — Server Response:**
 
@@ -285,7 +286,7 @@ The client sends its information (IP address, notification port, current time, i
 | 40 | 4 | Client Count | `0x00000001` |
 | 44 | 4 | Client IP | Client IPv4 address |
 | 48 | 4 | Notification Port | Event notification port (55265) |
-| 52 | 48 | Identity String | Pairing identity (see §4.5; null-padded ASCII) |
+| 52 | 48 | Identity String | Pairing identity (see [§4.5]; null-padded ASCII) |
 | 100 | 2 | Year | Current year (big-endian) |
 | 102 | 1 | Month | Current month |
 | 103 | 1 | Day | Current day |
@@ -296,6 +297,8 @@ The client sends its information (IP address, notification port, current time, i
 | 108 | 8 | Reserved | Zero-filled |
 | 116 | 4 | Client Type | `0xFFFF8170` |
 | 120 | 264 | Reserved | Zero-filled |
+
+[§4.5]: #45-pairing-protocol
 
 **Response (20 bytes):**
 
@@ -416,14 +419,24 @@ sequenceDiagram
 
 Used for device information retrieval, scan settings read/write, and scan data transfer.
 
+The data channel command system is based on a **SCSI over TCP** architecture. The value at offset 32 is not a command code but the **SCSI CDB (Command Descriptor Block) byte length**, and the bytes starting at offset 48 are the actual **SCSI CDB**. The first byte of the CDB is the SCSI opcode, which distinguishes the command. Standard SCSI commands (INQUIRY `0x12`, READ(10) `0x28`) coexist with vendor-specific commands (`0xC2`–`0xEB`).
+
 ### 5.1 Command List
 
-| Command Code | Name | Description |
-|-------------|------|-------------|
-| `0x00000006` | GET_SET | Device info and scan settings get/set (distinguished by sub-command) |
-| `0x00000008` | CONFIG | Scanner configuration read/write |
-| `0x0000000A` | GET_STATUS | Scan status retrieval |
-| `0x0000000C` | PAGE_TRANSFER | Scan page data transfer request |
+| CDB Length | SCSI Opcode | Name | Description |
+|-----------|-------------|------|-------------|
+| 6 (`0x06`) | `0x12` | INQUIRY | Get device info (standard) and scan parameters (EVPD VPD page)* |
+| 6 (`0x06`) | `0xD4` | Write scan settings | Set color, quality, paper size, etc. (vendor-specific) |
+| 6 (`0x06`) | `0xD5` | Prepare scan | Used within scan session (vendor-specific) |
+| 6 (`0x06`) | `0xD6` | End scan | End scan session (vendor-specific) |
+| 6 (`0x06`) | `0xD8` | Read scan settings | Read current settings (vendor-specific) |
+| 6 (`0x06`) | `0xE0` | Wait for scan start | Blocks until button press or trigger (vendor-specific) |
+| 8 (`0x08`) | `0xEB` | Set configuration | Initial scanner configuration during connect (vendor-specific) |
+| 8 (`0x08`) | `0xDB` | Write tone curve | Bleed-through reduction LUT (vendor-specific) |
+| 10 (`0x0A`) | `0xC2` | Get status | Scan progress and device state retrieval (vendor-specific) |
+| 12 (`0x0C`) | `0x28` | Page transfer | Scan page data transfer request (standard SCSI READ(10) extended) |
+
+\* Get scan parameters is sent as CDB bytes `12 01 F0 00 90 00`. CDB[0]=`0x12` is the SCSI opcode (INQUIRY), CDB[4]=`0x90` is the Allocation Length (144 bytes). Structured as an INQUIRY VPD page request (EVPD=1, Page Code=0xF0).
 
 ### 5.2 Connection Sequence
 
@@ -434,23 +447,25 @@ All data channel connections follow this pattern:
 3. Client sends command
 4. Server returns response
 
-### 5.3 GET_SET Command (0x06)
+### 5.3 CDB Length 6 Commands (GET_SET family)
 
-A general-purpose command whose behavior varies by sub-command.
+Commands with a 6-byte CDB length. Following the SCSI 6-byte CDB format, offset 48 through 53 form the CDB. The SCSI opcode at the start of the CDB determines the operation.
 
-**Sub-command List:**
+**SCSI Opcode List:**
 
-| Sub-command | Name | Description |
-|------------|------|-------------|
-| `0x12` | Get device info | Device name, firmware version, etc. |
-| `0x90` | Get scan parameters | Scanner capabilities (max resolution, color modes, etc.) |
-| `0xD4` | Write scan settings | Color, quality, paper size, etc. |
-| `0xD5` | Prepare scan | Used within scan session |
-| `0xD8` | Read scan settings | Read current settings |
-| `0xD6` | End scan | End scan session (resets scanner state) |
-| `0xE0` | Wait for scan start | Blocks until button press or trigger |
+| Opcode | Name | Description |
+|--------|------|-------------|
+| `0x12` | INQUIRY | Get device info (EVPD=0, [§5.3.1]) and scan parameters (EVPD=1, VPD Page=0xF0, [§5.3.3]) |
+| `0xD4` | Write scan settings | Vendor-specific — Color, quality, paper size, etc. |
+| `0xD5` | Prepare scan | Vendor-specific — Used within scan session |
+| `0xD8` | Read scan settings | Vendor-specific — Read current settings |
+| `0xD6` | End scan | Vendor-specific — End scan session (resets scanner state) |
+| `0xE0` | Wait for scan start | Vendor-specific — Blocks until button press or trigger |
 
-#### 5.3.1 Get Device Info (sub=0x12)
+[§5.3.1]: #531-get-device-info-inquiry-opcode0x12
+[§5.3.3]: #533-get-scan-parameters-inquiry-vpd-opcode0x12-evpd1
+
+#### 5.3.1 Get Device Info (INQUIRY: opcode=0x12)
 
 **Request (64 bytes):**
 
@@ -462,12 +477,11 @@ A general-purpose command whose behavior varies by sub-command.
 | 12 | 4 | Reserved | `0x00000000` |
 | 16 | 8 | Session Token | |
 | 24 | 8 | Reserved | |
-| 32 | 4 | Command | `0x00000006` |
+| 32 | 4 | CDB Length | `0x00000006` (6-byte CDB) |
 | 36 | 4 | Data Size | `0x00000060` (96) |
 | 40 | 8 | Reserved | |
-| 48 | 4 | Sub-command | `0x12000000` |
-| 52 | 4 | Response Buffer Size | `0x60000000` |
-| 56 | 8 | Reserved | |
+| 48 | 6 | SCSI CDB | `12 00 00 00 60 00` — INQUIRY (Allocation Length=96) |
+| 54 | 10 | Reserved | |
 
 **Response (136 bytes):**
 
@@ -482,15 +496,15 @@ A general-purpose command whose behavior varies by sub-command.
 | 48 | 33 | Device Name | Device name (ASCII, null-terminated) includes firmware revision suffix (e.g. "FUJITSU ScanSnap iX500  0M00") |
 | 81 | 55 | Reserved | Zero-filled |
 
-#### 5.3.2 Read Scan Settings (sub=0xD8)
+#### 5.3.2 Read Scan Settings (opcode=0xD8)
 
-**Request (64 bytes):** Sub-command = `0xD8000000`
+**Request (64 bytes):** SCSI CDB opcode = `0xD8` (6-byte CDB)
 
 **Response (40 bytes):** Empty response when no settings are stored.
 
-#### 5.3.3 Get Scan Parameters (sub=0x90)
+#### 5.3.3 Get Scan Parameters (INQUIRY VPD: opcode=0x12, EVPD=1)
 
-**Request (64 bytes):** Sub-command = `0x1201F000`, Response Buffer Size = `0x90000000`
+**Request (64 bytes):** SCSI CDB = `12 01 F0 00 90 00` (INQUIRY, EVPD=1, Page Code=0xF0, Allocation Length=144)
 
 **Response (184 bytes):**
 
@@ -508,9 +522,9 @@ A general-purpose command whose behavior varies by sub-command.
 | 57 | 2 | Max Width | Maximum width |
 | 59+ | var | Additional Params | JPEG quality, paper sizes, etc. |
 
-#### 5.3.4 Write Scan Settings (sub=0xD4)
+#### 5.3.4 Write Scan Settings (opcode=0xD4)
 
-SET command that sends all scan configuration parameters.
+Vendor-specific SCSI command that sends all scan configuration parameters.
 
 **Request (192 bytes):**
 
@@ -520,9 +534,10 @@ SET command that sends all scan configuration parameters.
 | 4 | 4 | Magic | "VENS" |
 | 8 | 4 | Direction | `0x00000001` |
 | 16 | 8 | Session Token | |
-| 32 | 4 | Command | `0x00000006` |
+| 32 | 4 | CDB Length | `0x00000006` (6-byte CDB) |
 | 36 | 4 | Data Size | `0x000000A0` (160) |
-| 48 | 4 | Sub-command | `0xD4000000` |
+| 48 | 6 | SCSI CDB | `D4 00 00 00 A0 00` — Vendor-specific WRITE (Transfer Length=160) |
+| 54 | 10 | Reserved | |
 | 64+ | 128 | Config Data | See below |
 
 **Config Data Byte Mapping (relative to offset 64):**
@@ -541,8 +556,10 @@ Front and back scan settings are stored in identical structures (front: +31~, ba
 | +8 | 1 | Blank Page Removal | `0xE0`=ON, `0x80`=OFF | |
 | +9 | 1 | Constant | `0xC8` | |
 | +10 | 1 | Auto Quality | `0xA0`=auto quality, `0x80`=specified | |
-| +11 | 1 | Bleed-through | `0xC0`=reduction ON, `0x80`=OFF | Requires CONFIG(sub=0xDB) tone curve |
+| +11 | 1 | Bleed-through | `0xC0`=reduction ON, `0x80`=OFF | Requires [§5.5.2] tone curve |
 | +12 | 1 | Constant | `0x80` | |
+
+[§5.5.2]: #552-write-tone-curve-opcode0xdb
 
 **Front Side Parameters (+31~):**
 
@@ -593,18 +610,17 @@ The third byte depends on paper size: `0x09` for postcard, `0x0B` for all others
 | FINE | 200 | `0x00C8` |
 | SUPERFINE | 300 | `0x012C` |
 
-#### 5.3.5 Get Page Metadata (sub=0x12, within scan session)
+#### 5.3.5 Get Page Metadata (INQUIRY variant: opcode=0x12, within scan session)
 
-Retrieves page details after a page transfer. Sent with different parameters than the sub=0x12 used for device info during session establishment.
+Retrieves page details after a page transfer. Sent with different CDB parameters than the INQUIRY used for device info during session establishment.
 
 **Request (64 bytes):**
 
 | Offset | Size | Field | Value |
 |--------|------|-------|-------|
-| 32 | 4 | Command | `0x00000006` |
+| 32 | 4 | CDB Length | `0x00000006` (6-byte CDB) |
 | 36 | 4 | Param | `0x00000012` |
-| 48 | 4 | Sub-param | `0x03000000` |
-| 52 | 4 | Size | `0x12000000` |
+| 48 | 6 | SCSI CDB | `03 00 00 00 12 00` — REQUEST SENSE (Allocation Length=18) |
 
 **Response (58 bytes):**
 
@@ -618,17 +634,17 @@ Retrieves page details after a page transfer. Sent with different parameters tha
 | 44 | 4 | Total Image Size | Total size of the transferred page pair |
 | 48 | 10 | Reserved | Zero-filled |
 
-#### 5.3.6 End Scan (sub=0xD6)
+#### 5.3.6 End Scan (opcode=0xD6)
 
 Sent at the end of a scan session. Resets the scanner's internal state so it can accept the next scan. Must always be sent as post-scan cleanup (on the same TCP connection within the scan session).
 
 **Request (64 bytes):**
 
-Standard GET_SET format. Sub-command = `0xD6`.
+Standard CDB Length 6 format. SCSI CDB opcode = `0xD6`.
 
 **Response (40 bytes):** Standard empty response.
 
-#### 5.3.7 Wait for Scan Start (sub=0xE0)
+#### 5.3.7 Wait for Scan Start (opcode=0xE0)
 
 A blocking command that waits for a scan to start. Returns a response after a button press or app trigger.
 
@@ -636,7 +652,7 @@ Used both before the initial scan and after each page transfer. The response sta
 
 **Request (64 bytes):**
 
-Standard GET_SET format. Sub-command = `0xE0`.
+Standard CDB Length 6 format. SCSI CDB opcode = `0xE0`.
 
 **Response (40 bytes):**
 
@@ -657,9 +673,9 @@ Standard GET_SET format. Sub-command = `0xE0`.
 
 When no paper is present, the client generates an error and aborts (no protocol-level error notification exists).
 
-### 5.4 GET_STATUS Command (0x0A)
+### 5.4 CDB Length 10 Command — Get Status (opcode=0xC2)
 
-Checks scan status. Retrieves scan progress state and device state flags.
+Checks scan status. A vendor-specific command using the SCSI 10-byte CDB format that retrieves scan progress state and device state flags.
 
 Paper presence is determined by the Scan Status field at offset 40. When bit `0x80` is set, no paper is loaded in the ADF (or the scanner is not ready).
 
@@ -667,10 +683,9 @@ Paper presence is determined by the Scan Status field at offset 40. When bit `0x
 
 | Offset | Size | Field | Value |
 |--------|------|-------|-------|
-| 32 | 4 | Command | `0x0000000A` |
+| 32 | 4 | CDB Length | `0x0000000A` (10-byte CDB) |
 | 36 | 4 | Buffer Size | `0x00000020` (32) |
-| 48 | 4 | Status Type | `0xC2000000` |
-| 56 | 4 | Response Size | `0x20000000` |
+| 48 | 10 | SCSI CDB | `C2 00 00 00 00 00 00 00 20 00` — Vendor-specific READ (Allocation Length=32) |
 
 **Response (72 bytes):**
 
@@ -694,37 +709,36 @@ When no paper is present, the client should abort before sending WAIT_FOR_SCAN.
 
 > **Note:** Offset 44 may return the same value (`0x00010000`) regardless of paper presence. Use Scan Status at offset 40 for paper detection.
 
-### 5.5 CONFIG Command (0x08)
+### 5.5 CDB Length 8 Commands (CONFIG family)
 
-The CONFIG command uses the same data channel header format but with command `0x00000008`. Sub-commands distinguish between different configuration operations.
+Commands with an 8-byte CDB length. Vendor-specific commands using the SCSI 8-byte CDB format, distinguished by SCSI opcode.
 
-**Sub-command List:**
+**SCSI Opcode List:**
 
-| Sub-command | Name | Description |
-|------------|------|-------------|
-| `0xEB` | Set configuration | Initial scanner configuration during connect |
-| `0xDB` | Write tone curve | Bleed-through reduction tone curve (256-byte LUT) |
+| Opcode | Name | Description |
+|--------|------|-------------|
+| `0xEB` | Set configuration | Initial scanner configuration during connect (vendor-specific) |
+| `0xDB` | Write tone curve | Bleed-through reduction tone curve (256-byte LUT) (vendor-specific) |
 
-#### 5.5.1 Set Configuration (sub=0xEB)
+#### 5.5.1 Set Configuration (opcode=0xEB)
 
 **Request (68 bytes):**
 
 | Offset | Size | Field | Value |
 |--------|------|-------|-------|
-| 32 | 4 | Command | `0x00000008` |
+| 32 | 4 | CDB Length | `0x00000008` (8-byte CDB) |
 | 36 | 4 | Reserved | `0x00000000` |
 | 40 | 4 | Config Type | `0x00000004` |
 | 44 | 4 | Reserved | `0x00000000` |
-| 48 | 4 | Config Value | `0xEB000000` |
-| 52 | 4 | Reserved | `0x00040000` |
+| 48 | 8 | SCSI CDB | `EB 00 00 00 00 04 00 00` — Vendor-specific CONFIG |
 | 56 | 8 | Reserved | |
 | 64 | 4 | Sub-config | `0x05010000` |
 
 **Response (40 bytes):** Standard empty response, status `0x00000002`.
 
-#### 5.5.2 Write Tone Curve (sub=0xDB)
+#### 5.5.2 Write Tone Curve (opcode=0xDB)
 
-Sent within the scan session after Write Scan Settings (sub=0xD4) when bleed-through reduction is enabled. Contains a 256-byte lookup table (LUT) that adjusts the scanner's tone curve to boost highlights and reduce bleed-through artifacts.
+Sent within the scan session after Write Scan Settings (opcode=0xD4) when bleed-through reduction is enabled. Contains a 256-byte lookup table (LUT) that adjusts the scanner's tone curve to boost highlights and reduce bleed-through artifacts.
 
 **Required when:** The bleed-through flag at config data offset +11 is set to `0xC0`. Without this command, the scanner rejects the scan via WAIT_FOR_SCAN status=2.
 
@@ -738,13 +752,12 @@ Sent within the scan session after Write Scan Settings (sub=0xD4) when bleed-thr
 | 12 | 4 | Reserved | `0x00000000` |
 | 16 | 8 | Session Token | |
 | 24 | 8 | Reserved | |
-| 32 | 4 | Command | `0x00000008` |
+| 32 | 4 | CDB Length | `0x00000008` (8-byte CDB) |
 | 36 | 4 | Reserved | `0x00000000` |
 | 40 | 4 | Input Param Length | `0x0000010A` (266) |
 | 44 | 4 | Reserved | `0x00000000` |
-| 48 | 1 | Sub-command | `0xDB` |
-| 49 | 1 | Sub-param | `0x85` |
-| 50 | 14 | Parameters | `0x000000010A00...` |
+| 48 | 8 | SCSI CDB | `DB 85 00 00 00 01 0A 00` — Vendor-specific WRITE TONE CURVE |
+| 56 | 8 | Reserved | CDB padding (zero-filled) |
 | 64 | 10 | Tone Curve Header | `0x00001000010001000000` |
 | 74 | 256 | LUT Data | 256-byte tone curve lookup table |
 
@@ -839,7 +852,9 @@ sequenceDiagram
     S->>C: ACK
 ```
 
-### 6.2 PAGE_TRANSFER Command (0x0C)
+### 6.2 Page Transfer Command — CDB Length 12 (READ(10) Extended: opcode=0x28)
+
+Requests scan page data transfer using a 12-byte CDB that extends the standard SCSI READ(10) command (opcode `0x28`).
 
 #### Request (64 bytes)
 
@@ -851,23 +866,27 @@ sequenceDiagram
 | 12 | 4 | Reserved | `0x00000000` |
 | 16 | 8 | Session Token | |
 | 24 | 8 | Reserved | |
-| 32 | 4 | Command | `0x0000000C` |
+| 32 | 4 | CDB Length | `0x0000000C` (12-byte CDB) |
 | 36 | 4 | Transfer Flags | `0x00040000` |
 | 40 | 8 | Reserved | |
-| 48 | 4 | Buffer Config | `0x28000002` |
-| 52 | 4 | Page Flags | See below |
-| 56 | 1 | Sheet Number | 0-based sheet number |
-| 57 | 1 | Side | 0=front / 1=back |
-| 58 | 6 | Reserved | |
+| 48 | 12 | SCSI CDB | `28 00 00 02 ...` — READ(10) extended (see below) |
 
-**Page Flags:**
+**SCSI CDB Structure (12 bytes):**
 
-| Value | Meaning |
-|-------|---------|
-| `0x00000400` | Front side |
-| `0x00800400` | Back side |
+| CDB Offset | Size | Field | Description |
+|-----------|------|-------|-------------|
+| 0 | 1 | Opcode | `0x28` — SCSI READ(10) |
+| 1 | 1 | Reserved | `0x00` |
+| 2 | 1 | Data Type | `0x00`=IMAGE, `0x01`=THUMBNAIL |
+| 3 | 1 | Transfer Mode | `0x02` = BLOCK_UNTIL_AVAIL |
+| 4 | 1 | Reserved | `0x00` |
+| 5 | 1 | Front/Back | `0x00`=front, `0x80`=back |
+| 6 | 3 | Transfer Length | 24-bit BE (`0x040000` = 256KB) |
+| 9 | 1 | Reserved | `0x00` |
+| 10 | 1 | Page ID | Transfer sheet counter (0, 1, 2, ...) |
+| 11 | 1 | Sequence ID | Chunk number (0, 1, 2, ...) |
 
-In duplex mode, alternates between front and back for each side. In simplex mode, always use `0x00000400` (front side).
+In duplex mode, CDB[5] alternates between front and back (`0x00`=front, `0x80`=back). In simplex mode, always `0x00` (front). Page ID is a sequential counter per transfer sheet — in duplex: front=0, back=1, front=2, back=3, etc.
 
 #### Response (42-byte header + JPEG data)
 
