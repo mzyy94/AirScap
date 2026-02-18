@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
+	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/scanner"
 	"github.com/mzyy94/airscap/internal/vens"
 )
@@ -19,14 +22,20 @@ type handler struct {
 	adapter    *scanner.ESCLAdapter
 	sc         *scanner.Scanner
 	listenPort int
+	settings   *config.Store // nil when persistence is disabled
+
+	mu          sync.RWMutex
+	memSettings config.Settings // in-memory fallback when settings is nil
 }
 
 // NewHandler creates an HTTP handler for the Web UI.
-func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int) http.Handler {
-	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort}
+func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store) http.Handler {
+	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, memSettings: config.DefaultSettings()}
 	mux := http.NewServeMux()
 	staticContent, _ := fs.Sub(staticFS, "static")
 	mux.HandleFunc("GET /api/status", h.handleStatus)
+	mux.HandleFunc("GET /api/settings", h.handleGetSettings)
+	mux.HandleFunc("PUT /api/settings", h.handlePutSettings)
 	mux.Handle("GET /", http.FileServer(http.FS(staticContent)))
 	return mux
 }
@@ -99,3 +108,40 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
 }
+
+// --- Settings API ---
+
+func (h *handler) handleGetSettings(w http.ResponseWriter, r *http.Request) {
+	var s config.Settings
+	if h.settings != nil {
+		s = h.settings.Get()
+	} else {
+		h.mu.RLock()
+		s = h.memSettings
+		h.mu.RUnlock()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s)
+}
+
+func (h *handler) handlePutSettings(w http.ResponseWriter, r *http.Request) {
+	var s config.Settings
+	if err := json.NewDecoder(r.Body).Decode(&s); err != nil {
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if h.settings != nil {
+		if err := h.settings.Update(s); err != nil {
+			slog.Warn("settings save failed", "err", err)
+			http.Error(w, "failed to save settings", http.StatusInternalServerError)
+			return
+		}
+	} else {
+		h.mu.Lock()
+		h.memSettings = s
+		h.mu.Unlock()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s)
+}
+

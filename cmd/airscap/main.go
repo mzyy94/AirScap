@@ -18,6 +18,7 @@ import (
 	"github.com/OpenPrinting/go-mfp/util/optional"
 	"github.com/grandcat/zeroconf"
 
+	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/scanner"
 	"github.com/mzyy94/airscap/internal/vens"
 	"github.com/mzyy94/airscap/internal/webui"
@@ -33,6 +34,7 @@ func main() {
 	passwordFile := os.Getenv("AIRSCAP_PASSWORD_FILE")
 	listenPort := envInt("AIRSCAP_LISTEN_PORT", 8080)
 	deviceName := os.Getenv("AIRSCAP_DEVICE_NAME")
+	dataDir := envStr("AIRSCAP_DATA_DIR", os.Getenv("STATE_DIRECTORY"))
 
 	// Resolve password
 	if password == "" && passwordFile != "" {
@@ -93,6 +95,18 @@ func main() {
 	// Create eSCL adapter
 	adapter := scanner.NewESCLAdapter(sc)
 
+	// Initialize settings store (optional, requires AIRSCAP_DATA_DIR)
+	var settingsStore *config.Store
+	if dataDir != "" {
+		var err error
+		settingsStore, err = config.NewStore(dataDir)
+		if err != nil {
+			slog.Error("failed to create settings store", "dataDir", dataDir, "err", err)
+			os.Exit(1)
+		}
+		slog.Info("settings store initialized", "path", dataDir)
+	}
+
 	// Create eSCL HTTP server (BasePath="" so it handles paths directly)
 	esclServer := escl.NewAbstractServer(escl.AbstractServerOptions{
 		Scanner:  adapter,
@@ -122,8 +136,8 @@ func main() {
 	mux := http.NewServeMux()
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
-	// Web UI for status and scanning
-	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort)))
+	// Web UI for status and settings
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 

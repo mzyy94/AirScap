@@ -177,6 +177,68 @@
         </div>
       </div>
 
+      <!-- Default Settings -->
+      <div class="card mb-4" x-cloak x-show="settingsReady">
+        <header class="card-header">
+          <span class="card-header-icon">
+            <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
+          </span>
+          <p class="card-header-title">スキャン設定</p>
+          <span class="card-header-icon">
+            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
+          </span>
+        </header>
+        <div class="card-content">
+
+          <div class="field">
+            <label class="label is-small">カラーモード</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="scanConfig.colorMode" @change="debounceSaveSettings()">
+                  <template x-for="m in (status?.capabilities?.colorModes || [])">
+                    <option :value="m" x-text="modeLabel(m)"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label is-small">解像度</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="scanConfig.resolution" @change="debounceSaveSettings()">
+                  <template x-for="r in (status?.capabilities?.resolutions || [])">
+                    <option :value="String(r)" x-text="r + ' dpi'"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label is-small">出力形式</label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="scanConfig.format" @change="debounceSaveSettings()">
+                  <template x-for="f in (status?.capabilities?.formats || [])">
+                    <option :value="f" x-text="formatLabel(f)"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field" x-show="status?.capabilities?.duplex">
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="!scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = false; debounceSaveSettings()">片面スキャン</button>
+              <button type="button" class="button" :class="scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = true; debounceSaveSettings()">両面スキャン</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
       <!-- eSCL Endpoint -->
       <div class="card mb-4" x-cloak x-show="status?.esclUrl">
         <header class="card-header">
@@ -198,9 +260,16 @@
     function app() {
       return {
         status: null,
+        scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf' },
+        settingsReady: false,
+        settingsSaved: false,
+        _saveTimer: null,
 
         async init() {
           await this.refresh();
+          await this.$nextTick();
+          await this.loadSettings();
+          this.settingsReady = true;
           setInterval(() => this.refresh(), 3000);
         },
 
@@ -212,6 +281,70 @@
             }
           } catch (e) {
             console.error('status fetch failed', e);
+          }
+        },
+
+        async loadSettings() {
+          try {
+            const resp = await fetch('api/settings');
+            if (!resp.ok) return;
+            const s = await resp.json();
+            this.scanConfig = {
+              colorMode: s.colorMode || 'color',
+              resolution: String(s.resolution || 300),
+              duplex: s.duplex || false,
+              format: s.format || 'application/pdf',
+            };
+            this.clampToCapabilities();
+          } catch (e) {
+            console.error('settings load failed', e);
+          }
+        },
+
+        clampToCapabilities() {
+          const caps = this.status?.capabilities;
+          if (!caps) return;
+          const res = caps.resolutions || [];
+          if (res.length && !res.includes(Number(this.scanConfig.resolution))) {
+            this.scanConfig.resolution = String(res[res.length - 1]);
+          }
+          const modes = caps.colorModes || [];
+          if (modes.length && !modes.includes(this.scanConfig.colorMode)) {
+            this.scanConfig.colorMode = modes[0];
+          }
+          const fmts = caps.formats || [];
+          if (fmts.length && !fmts.includes(this.scanConfig.format)) {
+            this.scanConfig.format = fmts[0];
+          }
+          if (!caps.duplex) {
+            this.scanConfig.duplex = false;
+          }
+        },
+
+        debounceSaveSettings() {
+          clearTimeout(this._saveTimer);
+          this._saveTimer = setTimeout(() => this.saveSettings(), 500);
+        },
+
+        async saveSettings() {
+          try {
+            const body = {
+              colorMode: this.scanConfig.colorMode,
+              resolution: Number(this.scanConfig.resolution),
+              duplex: this.scanConfig.duplex,
+              format: this.scanConfig.format,
+            };
+            const resp = await fetch('api/settings', {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body),
+            });
+            if (resp.ok) {
+              this.settingsSaved = true;
+              setTimeout(() => this.settingsSaved = false, 2000);
+            }
+          } catch (e) {
+            console.error('settings save failed', e);
           }
         },
 
