@@ -53,6 +53,16 @@ class Scanner:
     _IDENTITY_KEY = "pFusCANsNapFiPfu"
     _IDENTITY_SHIFT = 11
 
+    @staticmethod
+    def password_from_serial(serial: str) -> str:
+        """Derive the default scanner password from a serial number.
+
+        The password is the last 4 characters of the serial after stripping
+        trailing spaces and NUL bytes.  e.g. "iX500-AK6ABB0700" -> "0700".
+        """
+        s = serial.rstrip(" \x00")
+        return s[-4:] if len(s) > 4 else s
+
     @classmethod
     def compute_identity(cls, password: str) -> str:
         """Compute pairing identity from a password."""
@@ -76,11 +86,12 @@ class Scanner:
     ) -> tuple[Scanner, str]:
         """Pair with a scanner using password or pre-computed identity.
 
+        If neither *password* nor *identity* is given, the password is
+        derived from the scanner serial (last 4 non-space/NUL characters).
+
         Returns (scanner, identity) on success.
         Raises ValueError if pairing is rejected.
         """
-        if password is None and identity is None:
-            raise ValueError("Either password or identity must be provided")
         if password is not None and identity is not None:
             raise ValueError("Provide password or identity, not both")
 
@@ -95,6 +106,12 @@ class Scanner:
             scanner_ip=scanner_ip, token=token, timeout=timeout,
         )
         log.info("Discovered: %s (%s) at %s", info.name, info.serial, info.device_ip)
+
+        # Auto-derive password from serial if neither password nor identity given
+        if identity is None:
+            password = cls.password_from_serial(info.serial)
+            identity = cls.compute_identity(password)
+            log.info("Password derived from serial: %s", password)
 
         scanner = cls(
             host=info.device_ip,

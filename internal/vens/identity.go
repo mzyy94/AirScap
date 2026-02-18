@@ -12,6 +12,17 @@ const (
 	identityShift = 11
 )
 
+// PasswordFromSerial derives the default scanner password from a serial number.
+// The password is the last 4 characters of the serial after stripping trailing
+// spaces and NUL bytes. For example, serial "iX500-AK6ABB0700" yields "0700".
+func PasswordFromSerial(serial string) string {
+	s := strings.TrimRight(serial, " \x00")
+	if len(s) <= 4 {
+		return s
+	}
+	return s[len(s)-4:]
+}
+
 // ComputeIdentity derives a pairing identity string from a password.
 // identity[i] = ord(password[i]) + ord(KEY[i]) + SHIFT
 func ComputeIdentity(password string) (string, error) {

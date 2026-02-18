@@ -47,14 +47,12 @@ async def cmd_pair(args: argparse.Namespace) -> None:
     password = getattr(args, "password", None)
     identity = getattr(args, "pair_identity", None)
 
-    if not password and not identity:
-        print("Error: --password or --identity is required.", file=sys.stderr)
-        sys.exit(1)
-
     if password:
         print(f"Pairing with password: {password}")
-    else:
+    elif identity:
         print(f"Pairing with identity: {identity}")
+    else:
+        print("No password specified — will derive from scanner serial")
 
     if not args.ip:
         print("Discovering scanner...")
@@ -147,7 +145,7 @@ def main() -> None:
     sub.add_parser("discover", help="Find scanners on the network")
 
     pair_p = sub.add_parser("pair", help="Pair with a scanner")
-    pair_group = pair_p.add_mutually_exclusive_group(required=True)
+    pair_group = pair_p.add_mutually_exclusive_group()
     pair_group.add_argument(
         "--password", type=str, help="Scanner password (e.g. 0700)",
     )

@@ -46,9 +46,28 @@ func main() {
 		}
 		password = strings.TrimSpace(string(data))
 	}
-	if password == "" {
-		slog.Error("AIRSCAP_PASSWORD or AIRSCAP_PASSWORD_FILE is required")
-		os.Exit(1)
+	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer cancel()
+
+	// Discover scanner if IP not specified, or if password is empty (need serial)
+	if scannerIP == "" || password == "" {
+		slog.Info("discovering scanner...")
+		opts := vens.DiscoveryOptions{Timeout: 30 * time.Second, ScannerIP: scannerIP}
+		info, err := vens.FindScanner(ctx, opts)
+		if err != nil {
+			slog.Error("scanner discovery failed", "err", err)
+			os.Exit(1)
+		}
+		if scannerIP == "" {
+			scannerIP = info.DeviceIP
+		}
+		slog.Info("scanner found", "ip", scannerIP, "name", info.Name, "serial", info.Serial)
+
+		// Derive password from serial if not explicitly set
+		if password == "" {
+			password = vens.PasswordFromSerial(info.Serial)
+			slog.Info("password derived from serial", "password", password)
+		}
 	}
 
 	// Compute identity from password
@@ -58,21 +77,6 @@ func main() {
 		os.Exit(1)
 	}
 	slog.Info("identity computed", "identity", identity)
-
-	ctx, cancel := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
-	defer cancel()
-
-	// Discover scanner if IP not specified
-	if scannerIP == "" {
-		slog.Info("discovering scanner...")
-		info, err := vens.FindScanner(ctx, vens.DiscoveryOptions{Timeout: 30 * time.Second})
-		if err != nil {
-			slog.Error("scanner discovery failed", "err", err)
-			os.Exit(1)
-		}
-		scannerIP = info.DeviceIP
-		slog.Info("scanner found", "ip", scannerIP, "name", info.Name, "serial", info.Serial)
-	}
 
 	// Create and connect scanner
 	sc := scanner.New(scannerIP, vens.DefaultDataPort, vens.DefaultControlPort, identity)
