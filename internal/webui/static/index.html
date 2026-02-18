@@ -147,7 +147,7 @@
             <span class="is-size-7 has-text-grey">解像度</span>
             <div class="tags mb-0">
               <template x-for="r in (status?.capabilities?.resolutions || [])">
-                <span class="tag is-light is-rounded" x-text="r + ' dpi'"></span>
+                <span class="tag is-light is-rounded" x-text="resLabel(r)"></span>
               </template>
             </div>
           </div>
@@ -210,7 +210,7 @@
               <div class="select is-fullwidth">
                 <select x-model="scanConfig.resolution" @change="debounceSaveSettings()">
                   <template x-for="r in (status?.capabilities?.resolutions || [])">
-                    <option :value="String(r)" x-text="r + ' dpi'"></option>
+                    <option :value="String(r)" x-text="resLabel(r)"></option>
                   </template>
                 </select>
               </div>
@@ -367,7 +367,7 @@
       return {
         status: null,
         tick: 0,
-        scanConfig: { colorMode: 'color', resolution: '300', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '' },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '' },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
         settingsSaved: false,
@@ -402,8 +402,8 @@
             if (!resp.ok) return;
             const s = await resp.json();
             this.scanConfig = {
-              colorMode: s.colorMode || 'color',
-              resolution: String(s.resolution || 300),
+              colorMode: s.colorMode || 'auto',
+              resolution: String(s.resolution ?? 0),
               duplex: s.duplex || false,
               format: s.format || 'application/pdf',
               saveType: s.saveType || 'none',
@@ -493,8 +493,12 @@
           }
         },
 
+        resLabel(r) {
+          return r === 0 ? '自動' : r + ' dpi';
+        },
+
         modeLabel(mode) {
-          return { color: 'カラー', grayscale: 'グレースケール', bw: '白黒' }[mode] || mode;
+          return { auto: '自動', color: 'カラー', grayscale: 'グレースケール', bw: '白黒' }[mode] || mode;
         },
 
         formatLabel(fmt) {

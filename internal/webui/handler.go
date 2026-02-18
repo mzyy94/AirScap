@@ -94,8 +94,8 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 	caps := h.adapter.Capabilities()
 	resp.Caps = capsInfo{
-		Resolutions: []int{150, 200, 300},
-		ColorModes:  []string{"color", "grayscale", "bw"},
+		Resolutions: []int{0, 150, 200, 300},
+		ColorModes:  []string{"auto", "color", "grayscale", "bw"},
 		Duplex:      caps.ADFDuplex != nil,
 		Formats:     caps.DocumentFormats,
 	}

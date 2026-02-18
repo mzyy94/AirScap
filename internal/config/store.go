@@ -24,8 +24,8 @@ type Settings struct {
 // DefaultSettings returns the default scan settings.
 func DefaultSettings() Settings {
 	return Settings{
-		ColorMode:  "color",
-		Resolution: 300,
+		ColorMode:  "auto",
+		Resolution: 0,
 		Duplex:     false,
 		Format:     "application/pdf",
 		SaveType:   "none",

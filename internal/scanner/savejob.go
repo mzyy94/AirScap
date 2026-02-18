@@ -69,6 +69,8 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	cfg := vens.DefaultScanConfig()
 
 	switch s.ColorMode {
+	case "auto":
+		cfg.ColorMode = vens.ColorAuto
 	case "color":
 		cfg.ColorMode = vens.ColorColor
 	case "grayscale":
@@ -76,10 +78,12 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	case "bw":
 		cfg.ColorMode = vens.ColorBW
 	default:
-		cfg.ColorMode = vens.ColorColor
+		cfg.ColorMode = vens.ColorAuto
 	}
 
 	switch s.Resolution {
+	case 0:
+		cfg.Quality = vens.QualityAuto
 	case 150:
 		cfg.Quality = vens.QualityNormal
 	case 200:
@@ -87,7 +91,7 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	case 300:
 		cfg.Quality = vens.QualitySuperFine
 	default:
-		cfg.Quality = vens.QualitySuperFine
+		cfg.Quality = vens.QualityAuto
 	}
 
 	cfg.Duplex = s.Duplex
