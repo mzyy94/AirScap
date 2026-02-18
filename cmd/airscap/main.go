@@ -136,6 +136,10 @@ func main() {
 				slog.Warn("FTP host not configured, ignoring button press")
 				return
 			}
+			if s.SaveType == "paperless" && s.PaperlessURL == "" {
+				slog.Warn("Paperless-ngx URL not configured, ignoring button press")
+				return
+			}
 			cfg := scanner.SettingsToScanConfig(s)
 			scanStatus.SetScanning(true)
 			var pages int
@@ -147,6 +151,9 @@ func main() {
 			case "ftp":
 				pages, err = scanner.RunFTPJob(sc, cfg, s.Format, s)
 				scanStatus.SetResult(err, pages, s.FTPHost)
+			case "paperless":
+				pages, err = scanner.RunPaperlessJob(sc, cfg, s.Format, s)
+				scanStatus.SetResult(err, pages, s.PaperlessURL)
 			}
 			if err != nil {
 				slog.Error("button scan failed", "err", err)

@@ -273,6 +273,12 @@
                   <span>FTP</span>
                 </a>
               </li>
+              <li :class="scanConfig.saveType === 'paperless' ? 'is-active' : ''">
+                <a @click="scanConfig.saveType = 'paperless'; debounceSaveSettings()">
+                  <span class="icon is-small"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg></span>
+                  <span>Paperless-ngx</span>
+                </a>
+              </li>
             </ul>
           </div>
 
@@ -309,6 +315,25 @@
                 <input class="input" type="password" x-model="scanConfig.ftpPassword"
                   @change="debounceSaveSettings()">
               </div>
+            </div>
+          </div>
+
+          <div x-show="scanConfig.saveType === 'paperless'" x-transition>
+            <div class="field">
+              <label class="label is-small">Paperless-ngx URL</label>
+              <div class="control">
+                <input class="input" type="text" x-model="scanConfig.paperlessUrl"
+                  placeholder="http://paperless.local:8000" @change="debounceSaveSettings()">
+              </div>
+              <p class="help">Paperless-ngx のベース URL</p>
+            </div>
+            <div class="field">
+              <label class="label is-small">API トークン</label>
+              <div class="control">
+                <input class="input" type="password" x-model="scanConfig.paperlessToken"
+                  @change="debounceSaveSettings()">
+              </div>
+              <p class="help">設定 > API トークン から取得</p>
             </div>
           </div>
 
@@ -367,7 +392,7 @@
       return {
         status: null,
         tick: 0,
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '' },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
         settingsSaved: false,
@@ -411,6 +436,8 @@
               ftpHost: s.ftpHost || '',
               ftpUser: s.ftpUser || '',
               ftpPassword: s.ftpPassword || '',
+              paperlessUrl: s.paperlessUrl || '',
+              paperlessToken: s.paperlessToken || '',
             };
             this.clampToCapabilities();
             this.settingsReady = true;
@@ -456,6 +483,8 @@
               ftpHost: this.scanConfig.ftpHost,
               ftpUser: this.scanConfig.ftpUser,
               ftpPassword: this.scanConfig.ftpPassword,
+              paperlessUrl: this.scanConfig.paperlessUrl,
+              paperlessToken: this.scanConfig.paperlessToken,
             };
             const resp = await fetch('api/settings', {
               method: 'PUT',

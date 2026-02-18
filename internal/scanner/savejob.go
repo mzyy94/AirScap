@@ -3,10 +3,14 @@ package scanner
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"log/slog"
+	"mime/multipart"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -263,4 +267,99 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 	}
 
 	return len(pages), nil
+}
+
+// RunPaperlessJob executes a scan and uploads the result to Paperless-ngx.
+func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Settings) (int, error) {
+	baseURL := strings.TrimRight(s.PaperlessURL, "/")
+
+	slog.Info("button scan starting (Paperless-ngx)", "format", format, "url", baseURL)
+	pages, err := sc.Scan(cfg, nil)
+	if err != nil {
+		return len(pages), fmt.Errorf("scan: %w", err)
+	}
+	if len(pages) == 0 {
+		return 0, fmt.Errorf("scan returned no pages")
+	}
+
+	timestamp := time.Now().Format("20060102_150405")
+	dpi := vens.QualityDPI[cfg.Quality]
+	if dpi == 0 {
+		dpi = 300
+	}
+
+	isBW := cfg.ColorMode == vens.ColorBW
+
+	// PDF: upload as single document
+	if format == "application/pdf" && !isBW {
+		tmpFile, err := os.CreateTemp("", "scan_*.pdf")
+		if err != nil {
+			return len(pages), fmt.Errorf("create temp file: %w", err)
+		}
+		tmpPath := tmpFile.Name()
+		tmpFile.Close()
+		defer os.Remove(tmpPath)
+
+		if err := WritePDF(pages, dpi, tmpPath); err != nil {
+			return len(pages), fmt.Errorf("write PDF: %w", err)
+		}
+		docData, err := os.ReadFile(tmpPath)
+		if err != nil {
+			return len(pages), fmt.Errorf("read temp PDF: %w", err)
+		}
+		filename := fmt.Sprintf("scan_%s.pdf", timestamp)
+		if err := uploadToPaperless(baseURL, s.PaperlessToken, filename, docData); err != nil {
+			return len(pages), fmt.Errorf("paperless upload: %w", err)
+		}
+		slog.Info("scan uploaded to Paperless-ngx", "file", filename, "pages", len(pages))
+		return len(pages), nil
+	}
+
+	// Individual pages
+	for i, p := range pages {
+		ext := "jpg"
+		if isBW {
+			ext = "tiff"
+		}
+		fn := fmt.Sprintf("scan_%s_%03d.%s", timestamp, i+1, ext)
+		if err := uploadToPaperless(baseURL, s.PaperlessToken, fn, p.JPEG); err != nil {
+			return len(pages), fmt.Errorf("paperless upload page %d: %w", i+1, err)
+		}
+	}
+	slog.Info("scan uploaded to Paperless-ngx", "pages", len(pages))
+	return len(pages), nil
+}
+
+func uploadToPaperless(baseURL, token, filename string, data []byte) error {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, err := writer.CreateFormFile("document", filename)
+	if err != nil {
+		return fmt.Errorf("create form file: %w", err)
+	}
+	if _, err := io.Copy(part, bytes.NewReader(data)); err != nil {
+		return fmt.Errorf("write form data: %w", err)
+	}
+	writer.Close()
+
+	url := baseURL + "/api/documents/post_document/"
+	req, err := http.NewRequest("POST", url, &body)
+	if err != nil {
+		return fmt.Errorf("create request: %w", err)
+	}
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Authorization", "Token "+token)
+
+	client := &http.Client{Timeout: 60 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("HTTP request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
+	}
+	return nil
 }

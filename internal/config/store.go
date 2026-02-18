@@ -14,11 +14,13 @@ type Settings struct {
 	Resolution  int    `json:"resolution"`
 	Duplex      bool   `json:"duplex"`
 	Format      string `json:"format"`
-	SaveType    string `json:"saveType"` // "none", "local", "ftp"
-	SavePath    string `json:"savePath"` // directory path when SaveType="local"
-	FTPHost     string `json:"ftpHost"`
-	FTPUser     string `json:"ftpUser"`
-	FTPPassword string `json:"ftpPassword"`
+	SaveType       string `json:"saveType"` // "none", "local", "ftp", "paperless"
+	SavePath       string `json:"savePath"` // directory path when SaveType="local"
+	FTPHost        string `json:"ftpHost"`
+	FTPUser        string `json:"ftpUser"`
+	FTPPassword    string `json:"ftpPassword"`
+	PaperlessURL   string `json:"paperlessUrl"`
+	PaperlessToken string `json:"paperlessToken"`
 }
 
 // DefaultSettings returns the default scan settings.
