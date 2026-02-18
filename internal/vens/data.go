@@ -218,10 +218,10 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		return nil, fmt.Errorf("get status: %w", err)
 	}
 	slog.Debug("status response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
-	if len(resp) >= 44 {
-		scanStatus := binary.BigEndian.Uint32(resp[40:44])
+	if len(resp) >= StatusRespScanStatusOffset+4 {
+		scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 		slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
-		if scanStatus&0x80 != 0 {
+		if !HasPaper(scanStatus) {
 			return nil, &ScanError{Msg: "no paper in ADF"}
 		}
 	}
@@ -236,8 +236,8 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	if err != nil {
 		return nil, fmt.Errorf("wait for scan response: %w", err)
 	}
-	if len(resp) >= 16 {
-		waitStatus := binary.BigEndian.Uint32(resp[12:16])
+	if len(resp) >= WaitRespStatusOffset+4 {
+		waitStatus := binary.BigEndian.Uint32(resp[WaitRespStatusOffset : WaitRespStatusOffset+4])
 		slog.Info("scan started", "waitStatus", waitStatus)
 		if waitStatus != 0 {
 			return nil, &ScanError{Msg: fmt.Sprintf("WaitForScan returned status=%d (expected 0)", waitStatus)}
@@ -298,8 +298,8 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		if err != nil {
 			return pages, fmt.Errorf("status check recv: %w", err)
 		}
-		if len(statusResp) >= 44 {
-			scanStatus := binary.BigEndian.Uint32(statusResp[40:44])
+		if len(statusResp) >= StatusRespScanStatusOffset+4 {
+			scanStatus := binary.BigEndian.Uint32(statusResp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 			slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
 		}
 
@@ -313,8 +313,8 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		if err != nil {
 			return pages, fmt.Errorf("wait next sheet recv: %w", err)
 		}
-		if len(resp) >= 16 {
-			waitStatus := binary.BigEndian.Uint32(resp[12:16])
+		if len(resp) >= WaitRespStatusOffset+4 {
+			waitStatus := binary.BigEndian.Uint32(resp[WaitRespStatusOffset : WaitRespStatusOffset+4])
 			if waitStatus != 0 {
 				slog.Info("scan complete", "waitStatus", waitStatus)
 				break
@@ -337,14 +337,12 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 // transferPageChunks reads all JPEG chunks for a single page side.
 // The scanner sends data in 256KB chunks; page_type=2 marks the final chunk.
 func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int, backSide bool) ([]byte, error) {
-	pageBase := sheet << 8
 	var jpegBuf []byte
 
 	for chunk := 0; ; chunk++ {
-		pageNum := pageBase | chunk
 		conn.SetDeadline(time.Now().Add(30 * time.Second))
 
-		if _, err := conn.Write(MarshalPageTransfer(d.token, pageNum, backSide)); err != nil {
+		if _, err := conn.Write(MarshalPageTransfer(d.token, sheet, chunk, backSide)); err != nil {
 			return nil, fmt.Errorf("chunk %d send: %w", chunk, err)
 		}
 
@@ -384,14 +382,14 @@ func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int, backSide bool
 			jpegBuf = append(jpegBuf, jpegChunk...)
 		}
 
-		slog.Debug("chunk", "pageNum", fmt.Sprintf("0x%04X", pageNum), "pageType", header.PageType, "chunk_bytes", jpegSize, "total_bytes", len(jpegBuf))
+		slog.Debug("chunk", "sheet", sheet, "chunk", chunk, "pageType", header.PageType, "chunk_bytes", jpegSize, "total_bytes", len(jpegBuf))
 
 		if header.PageType == PageTypeFinal {
 			break
 		}
 	}
 
-	slog.Debug("transfer complete", "sheet", sheet, "bytes", len(jpegBuf), "chunks", len(jpegBuf)/262144+1)
+	slog.Debug("transfer complete", "sheet", sheet, "bytes", len(jpegBuf), "chunks", len(jpegBuf)/int(PageTransferLen)+1)
 	return jpegBuf, nil
 }
 
@@ -402,11 +400,11 @@ func (d *DataChannel) CheckADFStatus() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if len(resp) < 44 {
+	if len(resp) < StatusRespScanStatusOffset+4 {
 		return false, errors.New("status response too short for ADF check")
 	}
-	scanStatus := binary.BigEndian.Uint32(resp[40:44])
-	hasPaper := scanStatus&0x80 == 0
+	scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
+	hasPaper := HasPaper(scanStatus)
 	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", hasPaper)
 	return hasPaper, nil
 }

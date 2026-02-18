@@ -33,6 +33,11 @@ class ControlCommand(IntEnum):
 
 
 class DataCommand(IntEnum):
+    """Data channel commands (TCP:53218).
+
+    Values represent SCSI CDB byte lengths:
+    0x06=6-byte CDB, 0x08=8-byte CDB, 0x0A=10-byte CDB, 0x0C=12-byte CDB.
+    """
     GET_SET = 0x06
     CONFIG = 0x08
     GET_STATUS = 0x0A
@@ -71,6 +76,27 @@ PAPER_DIMENSIONS: dict[int, tuple[int, int]] = {
 }
 
 _QUALITY_DPI = {Quality.AUTO: 0, Quality.NORMAL: 150, Quality.FINE: 200, Quality.SUPERFINE: 300}
+
+# SCSI opcodes (CDB byte 0)
+SCSI_OPCODE_REQUEST_SENSE = 0x03
+SCSI_OPCODE_INQUIRY = 0x12
+SCSI_OPCODE_READ10 = 0x28
+
+# Page transfer constants
+PAGE_TRANSFER_LEN = 0x040000  # 256KB per chunk
+
+# ADF paper detection (§5.4)
+# Applied to scan status uint32 at response offset 40.
+# Bit set = no paper; bit clear = paper present.
+ADF_NO_PAPER_MASK = 0x80
+
+# Page types in PageHeader
+PAGE_TYPE_MORE = 0   # More chunks follow
+PAGE_TYPE_FINAL = 2  # Last chunk of a page
+
+# Response field offsets
+STATUS_RESP_SCAN_STATUS_OFFSET = 40  # uint32 at resp[40:44]
+WAIT_RESP_STATUS_OFFSET = 12         # uint32 at resp[12:16]
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +378,7 @@ class DataRequest:
 
 @dataclass
 class GetDeviceInfoRequest:
-    """cmd=0x06, sub=0x12 — get device identity."""
+    """SCSI INQUIRY (EVPD) request for device identity."""
     token: bytes = b"\x00" * 8
 
     def pack(self) -> bytes:
@@ -361,7 +387,7 @@ class GetDeviceInfoRequest:
             0x00000060,  # data size
             0x00000000,
             0x00000000,
-            0x12000000,  # sub-command
+            SCSI_OPCODE_INQUIRY << 24,  # CDB[0] = INQUIRY
             0x60000000,  # response buffer size
             0x00000000,
             0x00000000,
@@ -390,7 +416,7 @@ class GetScanSettingsRequest:
 
 @dataclass
 class GetScanParamsRequest:
-    """cmd=0x06, sub=0x90 — get scanner capabilities/parameters."""
+    """SCSI INQUIRY (EVPD) request for scanner capabilities/parameters."""
     token: bytes = b"\x00" * 8
 
     def pack(self) -> bytes:
@@ -399,8 +425,8 @@ class GetScanParamsRequest:
             0x00000090,
             0x00000000,
             0x00000000,
-            0x1201F000,
-            0x90000000,
+            (SCSI_OPCODE_INQUIRY << 24) | 0x01F000,  # CDB: INQUIRY, EVPD=1, Page=0xF0
+            0x90000000,  # Allocation Length = 0x90 (144)
             0x00000000,
             0x00000000,
         )
@@ -744,46 +770,56 @@ class EndScanRequest:
 
 @dataclass
 class PageTransferRequest:
-    """cmd=0x0C — request a page of scan data.
+    """SCSI READ(10) page transfer request (§6.2).
 
-    Pages are requested sequentially per sheet.  The scanner returns
-    front‑side chunks (page_type=0) followed by back‑side data
-    (page_type=2) for duplex scans.  ``page_num`` encodes
-    ``(sheet << 8) | chunk_index``.
+    Each chunk request transfers up to 256KB of JPEG data.
+    ``sheet`` is the transfer sheet counter (Page ID),
+    ``chunk`` is the sequence index within a sheet (Sequence ID).
     """
     token: bytes = b"\x00" * 8
-    page_num: int = 0   # (sheet << 8) | chunk_index
     sheet: int = 0
+    chunk: int = 0
     back_side: bool = False  # True for back side in duplex mode
 
     def pack(self) -> bytes:
-        page_flags = 0x00800400 if self.back_side else 0x00000400
+        # SCSI CDB: 12 bytes per §6.2
+        cdb = bytearray(12)
+        cdb[0] = SCSI_OPCODE_READ10        # Opcode
+        # cdb[1] = 0x00                     # Reserved
+        # cdb[2] = 0x00                     # Data Type: IMAGE
+        cdb[3] = 0x02                       # Transfer Mode: BLOCK_UNTIL_AVAIL
+        # cdb[4] = 0x00                     # Reserved
+        cdb[5] = 0x80 if self.back_side else 0x00  # Front/Back
+        # Transfer Length: 24-bit big-endian
+        cdb[6] = (PAGE_TRANSFER_LEN >> 16) & 0xFF
+        cdb[7] = (PAGE_TRANSFER_LEN >> 8) & 0xFF
+        cdb[8] = PAGE_TRANSFER_LEN & 0xFF
+        # cdb[9] = 0x00                     # Reserved
+        cdb[10] = self.sheet                # Page ID
+        cdb[11] = self.chunk                # Sequence ID
+
         params = struct.pack(
-            "!IIIIIII",
-            0x00040000,  # buffer size: 256KB (must match capture for duplex)
+            "!III",
+            PAGE_TRANSFER_LEN,  # Allocation Length
             0x00000000,
             0x00000000,
-            0x28000002,
-            page_flags,
-            self.page_num,
-            0x00000000,
-        )
+        ) + bytes(cdb) + struct.pack("!I", 0x00000000)
         return DataRequest(self.token, DataCommand.PAGE_TRANSFER).pack(params)
 
 
 @dataclass
 class GetPageMetadataRequest:
-    """cmd=0x06, sub=0x12 — get page metadata after transfer."""
+    """SCSI REQUEST SENSE request for page metadata after transfer."""
     token: bytes = b"\x00" * 8
 
     def pack(self) -> bytes:
         params = struct.pack(
             "!IIIIIII",
-            0x00000012,
+            0x00000012,  # Allocation Length = 18
             0x00000000,
             0x00000000,
-            0x03000000,
-            0x12000000,
+            SCSI_OPCODE_REQUEST_SENSE << 24,  # CDB[0] = REQUEST SENSE
+            0x12000000,  # CDB[4] = Allocation Length (18)
             0x00000000,
             0x00000000,
         )

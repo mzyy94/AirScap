@@ -7,6 +7,7 @@ import logging
 import struct
 
 from scansnap.packets import (
+    ADF_NO_PAPER_MASK,
     ConfigRequest,
     EndScanRequest,
     GetDeviceInfoRequest,
@@ -14,10 +15,13 @@ from scansnap.packets import (
     GetScanParamsRequest,
     GetScanSettingsRequest,
     GetStatusRequest,
+    PAGE_TYPE_FINAL,
     PageHeader,
     PageTransferRequest,
     PrepareScanRequest,
     ScanConfig,
+    STATUS_RESP_SCAN_STATUS_OFFSET,
+    WAIT_RESP_STATUS_OFFSET,
     WaitForScanRequest,
     WelcomePacket,
     WriteToneCurveRequest,
@@ -162,10 +166,10 @@ class DataChannel:
             resp = await self._read_response(reader)
             log.debug("Status response: %d bytes", len(resp))
 
-            if len(resp) >= 44:
-                scan_status = struct.unpack_from("!I", resp, 40)[0]
+            if len(resp) >= STATUS_RESP_SCAN_STATUS_OFFSET + 4:
+                scan_status = struct.unpack_from("!I", resp, STATUS_RESP_SCAN_STATUS_OFFSET)[0]
                 log.info("Scan status: 0x%08X", scan_status)
-                if scan_status & 0x80:
+                if scan_status & ADF_NO_PAPER_MASK:
                     raise ScanError("No paper in ADF")
 
             # Step 5: Wait for scan (blocks until button pressed or app trigger)
@@ -173,7 +177,7 @@ class DataChannel:
             writer.write(WaitForScanRequest(token=self.token).pack())
             await writer.drain()
             resp = await self._read_response(reader)
-            wait_status = struct.unpack_from("!I", resp, 12)[0] if len(resp) >= 16 else 0
+            wait_status = struct.unpack_from("!I", resp, WAIT_RESP_STATUS_OFFSET)[0] if len(resp) >= WAIT_RESP_STATUS_OFFSET + 4 else 0
             log.info("Scan started (wait_status=%d)", wait_status)
 
             if wait_status != 0:
@@ -223,15 +227,15 @@ class DataChannel:
                 await writer.drain()
                 status_resp = await self._read_response(reader)
 
-                if len(status_resp) >= 44:
-                    scan_status = struct.unpack_from("!I", status_resp, 40)[0]
+                if len(status_resp) >= STATUS_RESP_SCAN_STATUS_OFFSET + 4:
+                    scan_status = struct.unpack_from("!I", status_resp, STATUS_RESP_SCAN_STATUS_OFFSET)[0]
                     log.info("Scan status: 0x%08X", scan_status)
 
                 # Wait for next physical sheet — status != 0 means scan complete
                 writer.write(WaitForScanRequest(token=self.token).pack())
                 await writer.drain()
                 resp = await self._read_response(reader)
-                wait_status = struct.unpack_from("!I", resp, 12)[0] if len(resp) >= 16 else 0
+                wait_status = struct.unpack_from("!I", resp, WAIT_RESP_STATUS_OFFSET)[0] if len(resp) >= WAIT_RESP_STATUS_OFFSET + 4 else 0
                 if wait_status != 0:
                     log.info("WaitForScan status=%d, scan complete", wait_status)
                     break
@@ -268,14 +272,12 @@ class DataChannel:
         more chunks follow; ``page_type=2`` marks the final chunk.
         All chunks are concatenated to form one complete JPEG.
         """
-        page_base = sheet << 8
         chunk = 0
         jpeg_buf = bytearray()
 
         while True:
-            page_num = page_base | chunk
             req = PageTransferRequest(
-                token=self.token, page_num=page_num, sheet=sheet,
+                token=self.token, sheet=sheet, chunk=chunk,
                 back_side=back_side,
             )
             writer.write(req.pack())
@@ -297,14 +299,14 @@ class DataChannel:
             header_data = len_data + rest_header
             header = PageHeader.unpack(header_data)
             log.debug(
-                "Chunk: page_num=0x%04X page_type=%d size=%d",
-                page_num, header.page_type, header.jpeg_size,
+                "Chunk: sheet=%d chunk=%d page_type=%d size=%d",
+                sheet, chunk, header.page_type, header.jpeg_size,
             )
 
             jpeg_chunk = await _read_exact(reader, header.jpeg_size)
             jpeg_buf.extend(jpeg_chunk)
 
-            if header.page_type == 2:
+            if header.page_type == PAGE_TYPE_FINAL:
                 break  # Final chunk
 
             chunk += 1

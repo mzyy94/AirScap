@@ -31,6 +31,8 @@ const (
 )
 
 // Data channel commands (TCP:53218).
+// These values at offset 32 represent the SCSI CDB byte length:
+// 0x06=6-byte CDB, 0x08=8-byte CDB, 0x0A=10-byte CDB, 0x0C=12-byte CDB.
 const (
 	CmdGetSet       uint32 = 0x06
 	CmdConfig       uint32 = 0x08
@@ -47,5 +49,23 @@ const (
 	PageTypeFinal uint32 = 0x02 // Last chunk of a page
 )
 
-// ADF paper detection bitmask.
-const ADFPaperMask uint32 = 0x00010000
+// ADF paper detection bitmask (§5.4).
+// Applied to the scan status uint32 at response offset 40.
+// Bit set = no paper; bit clear = paper present.
+const ADFPaperMask uint32 = 0x80
+
+// SCSI opcodes (CDB byte 0).
+const (
+	SCSIOpcodeRequestSense byte = 0x03 // REQUEST SENSE
+	SCSIOpcodeInquiry      byte = 0x12 // INQUIRY (EVPD)
+	SCSIOpcodeRead10       byte = 0x28 // READ(10) — page transfer
+)
+
+// Page transfer constants.
+const PageTransferLen uint32 = 0x040000 // 256KB per chunk
+
+// Response field offsets.
+const (
+	StatusRespScanStatusOffset = 40 // uint32 at resp[40:44]
+	WaitRespStatusOffset       = 12 // uint32 at resp[12:16]
+)

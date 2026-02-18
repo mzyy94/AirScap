@@ -356,7 +356,7 @@ func marshalDataRequest(token [8]byte, command uint32, params []byte) []byte {
 	return append(hdr, params...)
 }
 
-// ParseDataDeviceInfo parses a 136-byte TCP GET_SET sub=0x12 response.
+// ParseDataDeviceInfo parses a 136-byte SCSI INQUIRY response.
 // Extracts device name (offset 48, 33 bytes) and firmware revision from the name suffix.
 func ParseDataDeviceInfo(data []byte) (*DataDeviceInfo, error) {
 	if len(data) < 136 {
@@ -376,32 +376,32 @@ func ParseDataDeviceInfo(data []byte) (*DataDeviceInfo, error) {
 	}, nil
 }
 
-// MarshalGetDeviceInfo builds cmd=0x06, sub=0x12.
+// MarshalGetDeviceInfo builds a SCSI INQUIRY (EVPD) request for device identity.
 func MarshalGetDeviceInfo(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(0, 0x00000060)
-	p.putU32(12, 0x12000000)
+	p.putU32(12, uint32(SCSIOpcodeInquiry)<<24) // CDB[0] = INQUIRY
 	p.putU32(16, 0x60000000)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
-// MarshalGetScanSettings builds cmd=0x06, sub=0xD8.
+// MarshalGetScanSettings builds a vendor SCSI request (opcode 0xD8) for current scan settings.
 func MarshalGetScanSettings(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(12, 0xD8000000)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
-// MarshalGetScanParams builds cmd=0x06, sub=0x90.
+// MarshalGetScanParams builds a SCSI INQUIRY (EVPD) request for scanner capabilities.
 func MarshalGetScanParams(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(0, 0x00000090)
-	p.putU32(12, 0x1201F000)
-	p.putU32(16, 0x90000000)
+	p.putU32(12, uint32(SCSIOpcodeInquiry)<<24|0x01F000) // CDB: INQUIRY, EVPD=1, Page=0xF0
+	p.putU32(16, 0x90000000)                              // Allocation Length = 0x90 (144)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
-// MarshalConfigCommand builds cmd=0x08.
+// MarshalConfigCommand builds a vendor SCSI CONFIG request (opcode 0xEB).
 func MarshalConfigCommand(token [8]byte) []byte {
 	p := newPacket(32)
 	p.putU32(4, 0x00000004)
@@ -411,7 +411,7 @@ func MarshalConfigCommand(token [8]byte) []byte {
 	return marshalDataRequest(token, CmdConfig, p)
 }
 
-// MarshalGetStatus builds cmd=0x0A.
+// MarshalGetStatus builds a vendor SCSI GET_STATUS request (opcode 0xC2).
 func MarshalGetStatus(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(0, 0x00000020)
@@ -420,7 +420,7 @@ func MarshalGetStatus(token [8]byte) []byte {
 	return marshalDataRequest(token, CmdGetStatus, p)
 }
 
-// MarshalPrepareScan builds cmd=0x06, sub=0xD5.
+// MarshalPrepareScan builds a vendor SCSI PREPARE SCAN request (opcode 0xD5).
 func MarshalPrepareScan(token [8]byte) []byte {
 	p := newPacket(36)
 	p.putU32(0, 0x00000008)
@@ -430,42 +430,56 @@ func MarshalPrepareScan(token [8]byte) []byte {
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
-// MarshalWaitForScan builds cmd=0x06, sub=0xE0.
+// MarshalWaitForScan builds a vendor SCSI WAIT FOR SCAN request (opcode 0xE0).
 func MarshalWaitForScan(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(12, 0xE0000000)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
-// MarshalEndScan builds cmd=0x06, sub=0xD6 (end scan session).
+// MarshalEndScan builds a vendor SCSI END SCAN request (opcode 0xD6).
 func MarshalEndScan(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(12, 0xD6000000)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
-// MarshalPageTransfer builds cmd=0x0C for requesting scan page data.
-// pageNum = (sheet << 8) | chunkIndex
+// MarshalPageTransfer builds a SCSI READ(10) page transfer request (§6.2).
+// sheet is the transfer sheet counter (Page ID), chunk is the sequence index within a sheet.
 // backSide indicates whether this is the back side of a duplex scan.
-func MarshalPageTransfer(token [8]byte, pageNum int, backSide bool) []byte {
-	pageFlags := uint32(0x00000400) // front side
-	if backSide {
-		pageFlags = 0x00800400 // back side
-	}
+func MarshalPageTransfer(token [8]byte, sheet int, chunk int, backSide bool) []byte {
 	p := newPacket(28)
-	p.putU32(0, 0x00040000) // 256KB buffer
-	p.putU32(12, 0x28000002)
-	p.putU32(16, pageFlags)
-	p.putU32(20, uint32(pageNum))
+	// Allocation Length (param[0:4])
+	p.putU32(0, PageTransferLen)
+
+	// SCSI CDB at param[12:24] — READ(10), 12 bytes
+	cdb := p[12:24]
+	cdb[0] = SCSIOpcodeRead10 // Opcode
+	// cdb[1] = 0x00           // Reserved
+	// cdb[2] = 0x00           // Data Type: IMAGE
+	cdb[3] = 0x02 // Transfer Mode: BLOCK_UNTIL_AVAIL
+	// cdb[4] = 0x00           // Reserved
+	if backSide {
+		cdb[5] = 0x80 // Back side
+	}
+	// Transfer Length: 24-bit big-endian (0x040000 = 256KB)
+	tlen := PageTransferLen
+	cdb[6] = byte(tlen >> 16)
+	cdb[7] = byte(tlen >> 8)
+	cdb[8] = byte(tlen)
+	// cdb[9] = 0x00           // Reserved
+	cdb[10] = byte(sheet) // Page ID
+	cdb[11] = byte(chunk) // Sequence ID
+
 	return marshalDataRequest(token, CmdPageTransfer, p)
 }
 
-// MarshalGetPageMetadata builds cmd=0x06, sub=0x12 (in-scan variant).
+// MarshalGetPageMetadata builds a SCSI REQUEST SENSE request for page metadata after transfer.
 func MarshalGetPageMetadata(token [8]byte) []byte {
 	p := newPacket(28)
-	p.putU32(0, 0x00000012)
-	p.putU32(12, 0x03000000)
-	p.putU32(16, 0x12000000)
+	p.putU32(0, 0x00000012)                              // Allocation Length = 18
+	p.putU32(12, uint32(SCSIOpcodeRequestSense)<<24)      // CDB[0] = REQUEST SENSE
+	p.putU32(16, 0x12000000)                              // CDB[4] = Allocation Length (18)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
@@ -490,7 +504,7 @@ var bleedThroughLUT = [256]byte{
 	0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
 }
 
-// MarshalWriteToneCurve builds cmd=0x08, sub=0xDB (tone curve for bleed-through).
+// MarshalWriteToneCurve builds a vendor SCSI WRITE TONE CURVE request (opcode 0xDB).
 func MarshalWriteToneCurve(token [8]byte) []byte {
 	// Params: 28 bytes header + 10 bytes tone curve header + 256 bytes LUT = 294
 	p := newPacket(294)
@@ -508,7 +522,7 @@ func MarshalWriteToneCurve(token [8]byte) []byte {
 	return marshalDataRequest(token, CmdConfig, p)
 }
 
-// MarshalScanConfig builds the scan config SET packet (cmd=0x06, sub=0xD4).
+// MarshalScanConfig builds a vendor SCSI SET SCAN CONFIG request (opcode 0xD4).
 func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	isBW := cfg.ColorMode == ColorBW
 	isGray := cfg.ColorMode == ColorGray
@@ -707,7 +721,8 @@ func ParsePageHeader(data []byte) (*PageHeader, error) {
 	}, nil
 }
 
-// HasPaper checks the ADF status response for paper presence.
-func HasPaper(adfStatus uint32) bool {
-	return adfStatus&ADFPaperMask != 0
+// HasPaper checks the ADF status response for paper presence (§5.4).
+// ADFPaperMask bit clear = paper present; bit set = no paper.
+func HasPaper(scanStatus uint32) bool {
+	return scanStatus&ADFPaperMask == 0
 }
