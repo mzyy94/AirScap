@@ -25,7 +25,8 @@ type Scanner struct {
 	connected   bool
 	name        string
 	serial      string
-	deviceName  string // full device name with manufacturer from TCP GET_SET sub=0x12
+	deviceName        string // full device name with manufacturer from TCP GET_SET sub=0x12
+	firmwareRevision  string // firmware revision from device name suffix (e.g. "0M00")
 
 	reconnCancel context.CancelFunc
 	reconnDone   chan struct{}
@@ -151,6 +152,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	s.serial = info.Serial
 	if devInfo != nil {
 		s.deviceName = devInfo.DeviceName
+		s.firmwareRevision = devInfo.FirmwareRevision
 	}
 	s.mu.Unlock()
 	slog.Info("connected to scanner", "host", s.host, "name", info.Name, "serial", info.Serial, "deviceName", s.deviceName)
@@ -304,6 +306,13 @@ func (s *Scanner) DeviceName() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.deviceName
+}
+
+// FirmwareRevision returns the firmware revision from the device name suffix.
+func (s *Scanner) FirmwareRevision() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.firmwareRevision
 }
 
 // Manufacturer extracts the manufacturer from the device name

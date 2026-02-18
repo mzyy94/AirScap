@@ -19,7 +19,7 @@
     }
     .info-grid {
       display: grid;
-      grid-template-columns: 6rem 1fr;
+      grid-template-columns: 8rem 1fr;
       gap: 0.4rem 1rem;
       font-size: 0.875rem;
     }
@@ -130,6 +130,8 @@
             <dd x-text="status?.device?.host || '-'"></dd>
             <dt>メーカー</dt>
             <dd x-text="status?.device?.manufacturer || '-'"></dd>
+            <dt>F/W リビジョン</dt>
+            <dd x-text="status?.device?.firmwareRevision || '-'"></dd>
           </dl>
         </div>
       </div>

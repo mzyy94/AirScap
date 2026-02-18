@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -356,18 +357,22 @@ func marshalDataRequest(token [8]byte, command uint32, params []byte) []byte {
 }
 
 // ParseDataDeviceInfo parses a 136-byte TCP GET_SET sub=0x12 response.
-// Extracts device name (offset 48, 33 bytes) and firmware version.
+// Extracts device name (offset 48, 33 bytes) and firmware revision from the name suffix.
 func ParseDataDeviceInfo(data []byte) (*DataDeviceInfo, error) {
 	if len(data) < 136 {
 		return nil, fmt.Errorf("device info response too short: %d bytes", len(data))
 	}
 	name := nullTerminated(data[48:81])
-	fwMajor := binary.BigEndian.Uint16(data[81:83])
-	fwMinor := data[83]
+	// Firmware revision is the last space-separated token in the device name
+	// e.g. "FUJITSU ScanSnap iX500  0M00" → revision "0M00"
+	var revision string
+	trimmed := strings.TrimRight(name, " ")
+	if i := strings.LastIndex(trimmed, " "); i >= 0 {
+		revision = trimmed[i+1:]
+	}
 	return &DataDeviceInfo{
-		DeviceName:    name,
-		FirmwareMajor: fwMajor,
-		FirmwareMinor: fwMinor,
+		DeviceName:       name,
+		FirmwareRevision: revision,
 	}, nil
 }
 

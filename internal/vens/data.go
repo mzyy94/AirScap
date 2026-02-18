@@ -109,7 +109,7 @@ func (d *DataChannel) GetDeviceInfo() (*DataDeviceInfo, error) {
 	if err != nil {
 		return nil, err
 	}
-	slog.Debug("device info OK", "deviceName", info.DeviceName, "firmware", fmt.Sprintf("%d.%d", info.FirmwareMajor, info.FirmwareMinor))
+	slog.Debug("device info OK", "deviceName", info.DeviceName, "revision", info.FirmwareRevision)
 	return info, nil
 }
 

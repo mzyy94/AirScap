@@ -81,9 +81,8 @@ func DefaultScanConfig() ScanConfig {
 
 // DataDeviceInfo holds device identity from TCP GET_SET sub=0x12 response.
 type DataDeviceInfo struct {
-	DeviceName     string
-	FirmwareMajor  uint16
-	FirmwareMinor  uint8
+	DeviceName       string
+	FirmwareRevision string // extracted from device name suffix (e.g. "0M00")
 }
 
 // DeviceInfo holds information about a discovered scanner.
