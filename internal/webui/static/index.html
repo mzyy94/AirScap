@@ -197,7 +197,7 @@
             <label class="label is-small">カラーモード</label>
             <div class="control">
               <div class="select is-fullwidth">
-                <select x-model="scanConfig.colorMode" @change="debounceSaveSettings()">
+                <select x-model="scanConfig.colorMode" @change="onColorModeChange()">
                   <template x-for="m in (status?.capabilities?.colorModes || [])">
                     <option :value="m" x-text="modeLabel(m)"></option>
                   </template>
@@ -224,7 +224,7 @@
             <div class="control">
               <div class="select is-fullwidth">
                 <select x-model="scanConfig.format" @change="debounceSaveSettings()">
-                  <template x-for="f in (status?.capabilities?.formats || [])">
+                  <template x-for="f in availableFormats">
                     <option :value="f" x-text="formatLabel(f)"></option>
                   </template>
                 </select>
@@ -530,6 +530,20 @@
 
         modeLabel(mode) {
           return { auto: '自動', color: 'カラー', grayscale: 'グレースケール', bw: '白黒' }[mode] || mode;
+        },
+
+        get availableFormats() {
+          if (this.scanConfig.colorMode === 'bw') {
+            return ['application/pdf', 'image/tiff'];
+          }
+          return ['application/pdf', 'image/jpeg'];
+        },
+
+        onColorModeChange() {
+          if (!this.availableFormats.includes(this.scanConfig.format)) {
+            this.scanConfig.format = 'application/pdf';
+          }
+          this.debounceSaveSettings();
         },
 
         formatLabel(fmt) {

@@ -125,47 +125,25 @@ func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string
 
 	isBW := cfg.ColorMode == vens.ColorBW
 
-	switch {
-	case format == "application/pdf" && !isBW:
+	if format == "application/pdf" {
 		outPath := filepath.Join(savePath, fmt.Sprintf("scan_%s.pdf", timestamp))
-		if err := WritePDF(pages, dpi, outPath); err != nil {
+		if err := WritePDF(pages, dpi, isBW, outPath); err != nil {
 			return len(pages), fmt.Errorf("write PDF: %w", err)
 		}
 		slog.Info("scan saved as PDF", "path", outPath, "pages", len(pages))
-
-	case format == "application/pdf" && isBW:
-		// BW mode produces TIFF G4; fpdf doesn't support TIFF, save as individual TIFF files
-		slog.Warn("BW mode with PDF format not supported, saving as TIFF files")
-		for i, p := range pages {
-			outPath := filepath.Join(savePath, fmt.Sprintf("scan_%s_%03d.tiff", timestamp, i+1))
-			if err := os.WriteFile(outPath, p.JPEG, 0644); err != nil {
-				return len(pages), fmt.Errorf("write TIFF page %d: %w", i+1, err)
-			}
+	} else {
+		// Individual image files: extension matches actual data format
+		ext := "jpg"
+		if isBW {
+			ext = "tiff"
 		}
-		slog.Info("scan saved as TIFF files", "path", savePath, "pages", len(pages))
-
-	case format == "image/jpeg":
 		for i, p := range pages {
-			ext := "jpg"
-			if isBW {
-				ext = "tiff"
-			}
 			outPath := filepath.Join(savePath, fmt.Sprintf("scan_%s_%03d.%s", timestamp, i+1, ext))
 			if err := os.WriteFile(outPath, p.JPEG, 0644); err != nil {
 				return len(pages), fmt.Errorf("write page %d: %w", i+1, err)
 			}
 		}
-		slog.Info("scan saved as individual files", "path", savePath, "pages", len(pages))
-
-	default:
-		// image/tiff or unknown: save raw data
-		for i, p := range pages {
-			outPath := filepath.Join(savePath, fmt.Sprintf("scan_%s_%03d.tiff", timestamp, i+1))
-			if err := os.WriteFile(outPath, p.JPEG, 0644); err != nil {
-				return len(pages), fmt.Errorf("write page %d: %w", i+1, err)
-			}
-		}
-		slog.Info("scan saved as TIFF files", "path", savePath, "pages", len(pages))
+		slog.Info("scan saved as individual files", "path", savePath, "pages", len(pages), "ext", ext)
 	}
 
 	return len(pages), nil
@@ -209,9 +187,7 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 
 	isBW := cfg.ColorMode == vens.ColorBW
 
-	switch {
-	case format == "application/pdf" && !isBW:
-		// Write PDF to temp file, then upload
+	if format == "application/pdf" {
 		tmpFile, err := os.CreateTemp("", "scan_*.pdf")
 		if err != nil {
 			return len(pages), fmt.Errorf("create temp file: %w", err)
@@ -220,7 +196,7 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 		tmpFile.Close()
 		defer os.Remove(tmpPath)
 
-		if err := WritePDF(pages, dpi, tmpPath); err != nil {
+		if err := WritePDF(pages, dpi, isBW, tmpPath); err != nil {
 			return len(pages), fmt.Errorf("write PDF: %w", err)
 		}
 		data, err := os.ReadFile(tmpPath)
@@ -232,38 +208,18 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 			return len(pages), fmt.Errorf("FTP upload %s: %w", remoteName, err)
 		}
 		slog.Info("scan uploaded via FTP", "file", remoteName, "pages", len(pages))
-
-	case format == "application/pdf" && isBW:
-		slog.Warn("BW mode with PDF format not supported, uploading as TIFF files")
-		for i, p := range pages {
-			remoteName := fmt.Sprintf("scan_%s_%03d.tiff", timestamp, i+1)
-			if err := conn.Stor(remoteName, bytes.NewReader(p.JPEG)); err != nil {
-				return len(pages), fmt.Errorf("FTP upload TIFF page %d: %w", i+1, err)
-			}
+	} else {
+		ext := "jpg"
+		if isBW {
+			ext = "tiff"
 		}
-		slog.Info("scan uploaded via FTP as TIFF", "pages", len(pages))
-
-	case format == "image/jpeg":
 		for i, p := range pages {
-			ext := "jpg"
-			if isBW {
-				ext = "tiff"
-			}
 			remoteName := fmt.Sprintf("scan_%s_%03d.%s", timestamp, i+1, ext)
 			if err := conn.Stor(remoteName, bytes.NewReader(p.JPEG)); err != nil {
 				return len(pages), fmt.Errorf("FTP upload page %d: %w", i+1, err)
 			}
 		}
-		slog.Info("scan uploaded via FTP", "pages", len(pages))
-
-	default:
-		for i, p := range pages {
-			remoteName := fmt.Sprintf("scan_%s_%03d.tiff", timestamp, i+1)
-			if err := conn.Stor(remoteName, bytes.NewReader(p.JPEG)); err != nil {
-				return len(pages), fmt.Errorf("FTP upload page %d: %w", i+1, err)
-			}
-		}
-		slog.Info("scan uploaded via FTP as TIFF", "pages", len(pages))
+		slog.Info("scan uploaded via FTP", "pages", len(pages), "ext", ext)
 	}
 
 	return len(pages), nil
@@ -291,7 +247,7 @@ func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.S
 	isBW := cfg.ColorMode == vens.ColorBW
 
 	// PDF: upload as single document
-	if format == "application/pdf" && !isBW {
+	if format == "application/pdf" {
 		tmpFile, err := os.CreateTemp("", "scan_*.pdf")
 		if err != nil {
 			return len(pages), fmt.Errorf("create temp file: %w", err)
@@ -300,7 +256,7 @@ func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.S
 		tmpFile.Close()
 		defer os.Remove(tmpPath)
 
-		if err := WritePDF(pages, dpi, tmpPath); err != nil {
+		if err := WritePDF(pages, dpi, isBW, tmpPath); err != nil {
 			return len(pages), fmt.Errorf("write PDF: %w", err)
 		}
 		docData, err := os.ReadFile(tmpPath)

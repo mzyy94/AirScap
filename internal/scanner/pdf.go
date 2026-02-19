@@ -6,13 +6,16 @@ import (
 	"image"
 	_ "image/jpeg"
 
-	"github.com/go-pdf/fpdf"
+	"codeberg.org/go-pdf/fpdf"
+	fpdftiff "codeberg.org/go-pdf/fpdf/contrib/tiff"
+	_ "golang.org/x/image/tiff"
 
 	"github.com/mzyy94/airscap/internal/vens"
 )
 
-// WritePDF combines scanned JPEG pages into a single PDF file.
-func WritePDF(pages []vens.Page, dpi int, outputPath string) error {
+// WritePDF combines scanned pages (JPEG or TIFF) into a single PDF file.
+// When isBW is true, TIFF pages are registered via fpdf's contrib/tiff package.
+func WritePDF(pages []vens.Page, dpi int, isBW bool, outputPath string) error {
 	if len(pages) == 0 {
 		return fmt.Errorf("no pages to write")
 	}
@@ -29,15 +32,20 @@ func WritePDF(pages []vens.Page, dpi int, outputPath string) error {
 			return fmt.Errorf("decode page %d image config: %w", i+1, err)
 		}
 
-		// Convert pixels to mm: mm = pixels / dpi * 25.4
 		widthMM := float64(cfg.Width) / float64(dpi) * 25.4
 		heightMM := float64(cfg.Height) / float64(dpi) * 25.4
 
 		pdf.AddPageFormat("P", fpdf.SizeType{Wd: widthMM, Ht: heightMM})
 
 		name := fmt.Sprintf("page%d", i)
-		pdf.RegisterImageOptionsReader(name, fpdf.ImageOptions{ImageType: "JPEG"}, bytes.NewReader(p.JPEG))
-		pdf.ImageOptions(name, 0, 0, widthMM, heightMM, false, fpdf.ImageOptions{ImageType: "JPEG"}, 0, "")
+		if isBW {
+			opt := fpdf.ImageOptions{ImageType: "tiff"}
+			fpdftiff.RegisterReader(pdf, name, opt, bytes.NewReader(p.JPEG))
+		} else {
+			opt := fpdf.ImageOptions{ImageType: "JPEG"}
+			pdf.RegisterImageOptionsReader(name, opt, bytes.NewReader(p.JPEG))
+		}
+		pdf.ImageOptions(name, 0, 0, widthMM, heightMM, false, fpdf.ImageOptions{}, 0, "")
 	}
 
 	return pdf.OutputFileAndClose(outputPath)
