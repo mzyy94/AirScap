@@ -196,16 +196,32 @@ func main() {
 				if state == escl.ScannerDown {
 					return status
 				}
+				// Fix error job state: go-mfp uses JobCanceled+AbortedBySystem,
+				// but eSCL spec requires JobAborted for fatal errors
+				for i := range status.Jobs {
+					job := &status.Jobs[i]
+					if job.JobState == escl.JobCanceled &&
+						len(job.JobStateReasons) > 0 &&
+						job.JobStateReasons[0] == escl.AbortedBySystem {
+						job.JobState = escl.JobAborted
+					}
+				}
+				// Query live ADF status for paper presence
 				hasPaper, err := adapter.CheckADFStatus()
 				if err != nil {
 					slog.Warn("ADF status check failed", "err", err)
 					return status
 				}
-				if hasPaper {
-					status.ADFState = optional.New(escl.ScannerAdfLoaded)
-				} else {
-					status.ADFState = optional.New(escl.ScannerAdfEmpty)
+				// Use error-aware ADF state; override with live paper status when no error
+				adfState := adapter.ADFState()
+				if adfState == escl.ScannerAdfLoaded || adfState == escl.ScannerAdfEmpty {
+					if hasPaper {
+						adfState = escl.ScannerAdfLoaded
+					} else {
+						adfState = escl.ScannerAdfEmpty
+					}
 				}
+				status.ADFState = optional.New(adfState)
 				return status
 			},
 		},

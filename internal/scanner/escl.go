@@ -3,9 +3,11 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 
 	"github.com/OpenPrinting/go-mfp/abstract"
 	"github.com/OpenPrinting/go-mfp/proto/escl"
@@ -17,11 +19,14 @@ import (
 
 // ESCLAdapter implements abstract.Scanner for ScanSnap hardware.
 type ESCLAdapter struct {
+	mu               sync.Mutex
 	scanner          *Scanner
 	listenPort       int
 	caps             *abstract.ScannerCapabilities
-	adfEmpty         bool // true after a scan session completes (ADF likely exhausted)
-	blankPageRemoval bool // controlled by eSCL BlankPageDetectionAndRemoval
+	adfEmpty         bool              // true after a scan session completes (ADF likely exhausted)
+	blankPageRemoval bool              // controlled by eSCL BlankPageDetectionAndRemoval
+	lastScanErr      *vens.ScanError   // last scan error (for ADF state reporting)
+	scanning         bool              // true while a scan session is active
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
@@ -33,6 +38,8 @@ func NewESCLAdapter(s *Scanner, listenPort int) *ESCLAdapter {
 
 // SetBlankPageRemoval sets whether blank page removal is active for the next scan.
 func (a *ESCLAdapter) SetBlankPageRemoval(enabled bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
 	a.blankPageRemoval = enabled
 }
 
@@ -105,14 +112,18 @@ func (a *ESCLAdapter) Capabilities() *abstract.ScannerCapabilities {
 	return a.caps
 }
 
-// Scan converts an eSCL request to VENS parameters and executes the scan.
+// Scan converts an eSCL request to VENS parameters and starts a lazy scan session.
+// Pages are pulled one at a time, enabling SelectSinglePage support.
 func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (abstract.Document, error) {
 	if err := req.Validate(a.caps); err != nil {
 		return nil, err
 	}
 
 	cfg := mapScanConfig(req)
+	a.mu.Lock()
 	cfg.BlankPageRemoval = a.blankPageRemoval
+	a.mu.Unlock()
+
 	slog.Info("scan requested",
 		"colorMode", req.ColorMode,
 		"resolution", req.Resolution,
@@ -121,26 +132,23 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		"blankPageRemoval", cfg.BlankPageRemoval,
 	)
 
-	pages, err := a.scanner.Scan(cfg, nil)
-	a.adfEmpty = true
+	a.mu.Lock()
+	a.lastScanErr = nil // Clear previous error on new scan attempt
+	a.scanning = true
+	a.mu.Unlock()
 
-	// Collect non-empty image data from pages (some may exist even after errors)
-	var images [][]byte
-	for _, p := range pages {
-		if len(p.JPEG) > 0 {
-			images = append(images, p.JPEG)
-		}
-	}
-
-	if len(images) == 0 {
-		if err != nil {
-			return nil, err
-		}
-		return nil, fmt.Errorf("no pages scanned")
-	}
+	session, err := a.scanner.StartScan(cfg)
 	if err != nil {
-		slog.Warn("scan completed with error, returning partial results",
-			"err", err, "pages", len(images))
+		a.mu.Lock()
+		a.scanning = false
+		a.adfEmpty = true
+		// Remember scan error for ADF state reporting
+		var scanErr *vens.ScanError
+		if errors.As(err, &scanErr) {
+			a.lastScanErr = scanErr
+		}
+		a.mu.Unlock()
+		return nil, err
 	}
 
 	res := req.Resolution
@@ -158,7 +166,7 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	if isBW {
 		format = "image/tiff"
 	}
-	doc := &scanDocument{res: res, pages: images, format: format}
+	doc := &scanDocument{res: res, session: session, format: format, adapter: a}
 
 	// Apply filter for format conversion if needed
 	if req.DocumentFormat != "" && req.DocumentFormat != format {
@@ -170,19 +178,59 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	return doc, nil
 }
 
-// CheckADFStatus queries the scanner for paper presence.
+// CheckADFStatus queries the scanner for paper presence and error conditions.
 // On error, falls back to cached state from the last scan session.
+// Detects paper jam from scan_status bit 15 (valid in idle context only —
+// scanning flag prevents this method from being called during active scans).
+// Uses GET_STATUS error code at offset 44 for other scan-time errors.
+// During an active scan session, returns cached state to avoid blocking.
 func (a *ESCLAdapter) CheckADFStatus() (bool, error) {
-	hasPaper, err := a.scanner.CheckADFStatus()
+	a.mu.Lock()
+	if a.scanning {
+		// Scanner only handles one TCP connection at a time; skip live query during scan
+		empty := a.adfEmpty
+		a.mu.Unlock()
+		return !empty, nil
+	}
+	a.mu.Unlock()
+
+	// Network call without lock — CheckADFStatus now probes REQUEST SENSE
+	// on the same connection when scan_status has abnormal bits
+	status, err := a.scanner.CheckADFStatus()
 	if err != nil {
-		if a.adfEmpty {
+		a.mu.Lock()
+		empty := a.adfEmpty
+		a.mu.Unlock()
+		if empty {
 			slog.Warn("ADF status check failed, using cached state (empty)", "err", err)
 			return false, nil
 		}
 		return false, err
 	}
-	a.adfEmpty = !hasPaper
-	return hasPaper, nil
+
+	// Update all state under lock
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if status.HasJam {
+		// Paper jam from scan_status bit 15 (reliable in idle context)
+		if a.lastScanErr == nil || a.lastScanErr.Kind != vens.ScanErrPaperJam {
+			slog.Warn("paper jam detected from ADF status")
+		}
+		a.lastScanErr = &vens.ScanError{Kind: vens.ScanErrPaperJam, Msg: "paper jam"}
+	} else if status.ErrorCode != 0 {
+		// Error from GET_STATUS offset 44 (scan-time errors)
+		kind := errorCodeToKind(status.ErrorCode)
+		if a.lastScanErr == nil || a.lastScanErr.Kind != kind {
+			slog.Warn("scanner error detected", "errorCode", fmt.Sprintf("0x%04X", status.ErrorCode), "kind", kind)
+		}
+		a.lastScanErr = &vens.ScanError{Kind: kind, Msg: fmt.Sprintf("scanner error 0x%04X", status.ErrorCode)}
+	} else if a.lastScanErr != nil {
+		slog.Info("scanner error cleared", "previousErr", a.lastScanErr.Msg)
+		a.lastScanErr = nil
+	}
+	a.adfEmpty = !status.HasPaper
+	return status.HasPaper, nil
 }
 
 // ScannerState returns the current eSCL scanner state based on connection status.
@@ -190,13 +238,59 @@ func (a *ESCLAdapter) ScannerState() escl.ScannerState {
 	if !a.scanner.Online() {
 		return escl.ScannerDown
 	}
+	a.mu.Lock()
+	scanning := a.scanning
+	hasErr := a.lastScanErr != nil
+	a.mu.Unlock()
+	if scanning {
+		return escl.ScannerProcessing
+	}
+	if hasErr {
+		return escl.ScannerStopped
+	}
 	return escl.ScannerIdle
+}
+
+// ADFState returns the current eSCL ADF state, reflecting any scan errors.
+func (a *ESCLAdapter) ADFState() escl.ADFState {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.scanning {
+		return escl.ScannerAdfProcessing
+	}
+	if a.lastScanErr != nil {
+		switch a.lastScanErr.Kind {
+		case vens.ScanErrPaperJam:
+			return escl.ScannerAdfJam
+		case vens.ScanErrCoverOpen:
+			return escl.ScannerAdfHatchOpen
+		case vens.ScanErrMultiFeed:
+			return escl.ScannerAdfMultipickDetected
+		default:
+			return escl.ScannerAdfInputTrayFailed
+		}
+	}
+	if a.adfEmpty {
+		return escl.ScannerAdfEmpty
+	}
+	return escl.ScannerAdfLoaded
 }
 
 // Close closes the scanner connection.
 func (a *ESCLAdapter) Close() error {
 	a.scanner.Disconnect()
 	return nil
+}
+
+// errorCodeToKind maps GET_STATUS error codes (offset 44) to ScanErrorKind.
+func errorCodeToKind(code uint16) vens.ScanErrorKind {
+	switch code {
+	case 0x0155:
+		return vens.ScanErrMultiFeed
+	default:
+		// Unknown error code — log it so we can add mappings later
+		return vens.ScanErrGeneric
+	}
 }
 
 // mapScanConfig converts an eSCL ScannerRequest to VENS ScanConfig.
@@ -238,26 +332,48 @@ func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
 // Document / DocumentFile implementation for scanned pages
 // --------------------------------------------------------------------------
 
-// scanDocument wraps scanned pages as an abstract.Document.
+// scanDocument wraps a ScanSession as an abstract.Document.
+// Pages are pulled lazily from the scanner one at a time.
 type scanDocument struct {
-	res    abstract.Resolution
-	pages  [][]byte
-	format string // "image/jpeg" or "image/tiff"
-	idx    int
+	res     abstract.Resolution
+	session *vens.ScanSession
+	format  string // "image/jpeg" or "image/tiff"
+	adapter *ESCLAdapter
 }
 
 func (d *scanDocument) Resolution() abstract.Resolution { return d.res }
 
 func (d *scanDocument) Next() (abstract.DocumentFile, error) {
-	if d.idx >= len(d.pages) {
-		return nil, io.EOF
+	page, err := d.session.NextPage()
+	if err != nil {
+		d.adapter.mu.Lock()
+		d.adapter.scanning = false
+		d.adapter.adfEmpty = true
+		// Remember scan error for ADF state reporting
+		var scanErr *vens.ScanError
+		if errors.As(err, &scanErr) {
+			d.adapter.lastScanErr = scanErr
+		}
+		d.adapter.mu.Unlock()
+		if err == io.EOF {
+			return nil, io.EOF
+		}
+		return nil, err
 	}
-	f := &scanFile{Reader: bytes.NewReader(d.pages[d.idx]), format: d.format}
-	d.idx++
-	return f, nil
+	if len(page.JPEG) == 0 {
+		// Skip empty pages (blank page removal filtered them out)
+		return d.Next()
+	}
+	return &scanFile{Reader: bytes.NewReader(page.JPEG), format: d.format}, nil
 }
 
-func (d *scanDocument) Close() error { return nil }
+func (d *scanDocument) Close() error {
+	d.adapter.mu.Lock()
+	d.adapter.scanning = false
+	d.adapter.adfEmpty = true
+	d.adapter.mu.Unlock()
+	return d.session.Close()
+}
 
 // scanFile wraps a single scanned page as an abstract.DocumentFile.
 type scanFile struct {

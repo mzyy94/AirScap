@@ -49,10 +49,11 @@ const (
 	PageTypeFinal uint32 = 0x02 // Last chunk of a page
 )
 
-// ADF paper detection bitmask (§5.4).
-// Applied to the scan status uint32 at response offset 40.
-// Bit set = no paper; bit clear = paper present.
-const ADFPaperMask uint32 = 0x80
+// ADF status bitmasks applied to the scan status uint32 at response offset 40.
+const (
+	ADFPaperMask uint32 = 0x0080 // Bit 7: set = no paper; clear = paper present
+	ADFJamMask   uint32 = 0x8000 // Bit 15: paper jam (valid only in idle/ADF status context)
+)
 
 // SCSI opcodes (CDB byte 0).
 const (

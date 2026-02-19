@@ -158,31 +158,32 @@ func (d *DataChannel) SetConfig() ([]byte, error) {
 	return resp, nil
 }
 
-// RunScan executes a full scan session and returns all scanned pages.
-// The scan uses a single long-lived TCP connection.
-func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error) {
+// ScanSession manages an ongoing scan, allowing pages to be pulled one at a time.
+// This enables lazy scanning where the client can stop after any page without
+// the scanner feeding additional sheets.
+type ScanSession struct {
+	dc            *DataChannel
+	conn          net.Conn
+	token         [8]byte
+	sidesPerSheet int
+	physicalSheet int
+	transferSheet int
+	sideIdx       int
+	done          bool
+}
+
+// StartScan begins a scan session (setup, config, prepare, status check,
+// wait for first sheet) and returns a ScanSession from which pages can be
+// pulled one at a time via NextPage.
+func (d *DataChannel) StartScan(cfg ScanConfig) (*ScanSession, error) {
 	slog.Debug("starting scan session", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex, "paperSize", cfg.PaperSize)
 	conn, err := d.connect()
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		// End scan session (sub=0xD6) — required to reset scanner state
-		conn.SetDeadline(time.Now().Add(5 * time.Second))
-		if _, err := conn.Write(MarshalEndScan(d.token)); err != nil {
-			slog.Debug("end scan send failed", "err", err)
-		} else if _, err := readResponse(conn); err != nil {
-			slog.Debug("end scan response failed", "err", err)
-		} else {
-			slog.Debug("end scan session OK")
-		}
-		conn.Close()
-	}()
 
-	// No overall deadline for scanning — individual reads have their own timeouts
 	sendAndRecv := func(data []byte) ([]byte, error) {
 		conn.SetDeadline(time.Now().Add(10 * time.Second))
-		slog.Debug("scan send", "bytes", len(data))
 		if _, err := conn.Write(data); err != nil {
 			return nil, err
 		}
@@ -193,6 +194,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	slog.Debug("scan step 1: getting current scan settings...")
 	resp, err := sendAndRecv(MarshalGetScanSettings(d.token))
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("get settings: %w", err)
 	}
 	slog.Debug("get settings response", "bytes", len(resp))
@@ -201,6 +203,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	slog.Debug("scan step 2: writing scan config...")
 	resp, err = sendAndRecv(MarshalScanConfig(d.token, cfg))
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("set scan config: %w", err)
 	}
 	slog.Debug("set config response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
@@ -210,6 +213,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		slog.Debug("scan step 2.5: writing bleed-through tone curve...")
 		resp, err = sendAndRecv(MarshalWriteToneCurve(d.token))
 		if err != nil {
+			conn.Close()
 			return nil, fmt.Errorf("write tone curve: %w", err)
 		}
 		slog.Debug("tone curve response", "bytes", len(resp))
@@ -219,6 +223,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	slog.Debug("scan step 3: preparing scan...")
 	resp, err = sendAndRecv(MarshalPrepareScan(d.token))
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("prepare scan: %w", err)
 	}
 	slog.Debug("prepare scan response", "bytes", len(resp))
@@ -227,6 +232,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	slog.Debug("scan step 4: getting status...")
 	resp, err = sendAndRecv(MarshalGetStatus(d.token))
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("get status: %w", err)
 	}
 	slog.Debug("status response", "bytes", len(resp), "hex", hex.EncodeToString(resp))
@@ -234,6 +240,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 		slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
 		if !HasPaper(scanStatus) {
+			conn.Close()
 			return nil, &ScanError{Kind: ScanErrNoPaper, Msg: "no paper in ADF"}
 		}
 	}
@@ -242,79 +249,59 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 	slog.Debug("scan step 5: waiting for scan to start...")
 	conn.SetDeadline(time.Now().Add(120 * time.Second)) // Long timeout for user interaction
 	if _, err := conn.Write(MarshalWaitForScan(d.token)); err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("wait for scan: %w", err)
 	}
 	resp, err = readResponse(conn)
 	if err != nil {
+		conn.Close()
 		return nil, fmt.Errorf("wait for scan response: %w", err)
 	}
 	if len(resp) >= WaitRespStatusOffset+4 {
 		waitStatus := binary.BigEndian.Uint32(resp[WaitRespStatusOffset : WaitRespStatusOffset+4])
-		slog.Info("scan started", "waitStatus", waitStatus)
 		if waitStatus != 0 {
+			conn.Close()
 			return nil, &ScanError{Msg: fmt.Sprintf("WaitForScan returned status=%d (expected 0)", waitStatus)}
 		}
-	} else {
-		slog.Info("scan started!")
 	}
+	slog.Info("scan started")
 
-	// Step 6: Receive pages
-	var pages []Page
-	physicalSheet := 0
-	transferSheet := 0
 	sidesPerSheet := 1
 	if cfg.Duplex {
 		sidesPerSheet = 2
 	}
 
-	for {
-		for sideIdx := range sidesPerSheet {
-			sideName := "front"
-			if sideIdx == 1 {
-				sideName = "back"
-			}
-			slog.Debug("transferring page", "sheet", physicalSheet, "side", sideName, "transferSheet", transferSheet)
-			jpeg, err := d.transferPageChunks(conn, transferSheet, sideIdx == 1)
-			if err != nil {
-				return pages, fmt.Errorf("page transfer: %w", err)
-			}
+	return &ScanSession{
+		dc:            d,
+		conn:          conn,
+		token:         d.token,
+		sidesPerSheet: sidesPerSheet,
+	}, nil
+}
 
-			page := Page{Sheet: physicalSheet, Side: sideIdx, JPEG: jpeg}
-			pages = append(pages, page)
-			slog.Info("page received", "sheet", physicalSheet, "side", sideName, "bytes", len(jpeg))
-			if onPage != nil {
-				onPage(page)
-			}
+// NextPage returns the next scanned page. Returns io.EOF when no more pages
+// are available. For duplex, front and back sides are returned as separate pages.
+//
+// Crucially, the next physical sheet is only fed when NextPage is called for it.
+// This enables SelectSinglePage: the client can stop calling NextPage after one
+// sheet and Close the session without the scanner feeding additional pages.
+func (s *ScanSession) NextPage() (Page, error) {
+	if s.done {
+		return Page{}, io.EOF
+	}
 
-			// Page metadata after each transfer
-			conn.SetDeadline(time.Now().Add(10 * time.Second))
-			if _, err := conn.Write(MarshalGetPageMetadata(d.token)); err != nil {
-				return pages, fmt.Errorf("page metadata send: %w", err)
-			}
-			metaResp, err := readResponse(conn)
-			if err != nil {
-				return pages, fmt.Errorf("page metadata recv: %w", err)
-			}
-			slog.Debug("page metadata", "bytes", len(metaResp))
-
-			// Parse SCSI Sense Data from REQUEST SENSE response
-			if senseErr := parseSenseError(metaResp); senseErr != nil {
-				slog.Warn("scanner error in sense data", "err", senseErr, "kind", senseErr.Kind, "pages", len(pages))
-				return pages, senseErr
-			}
-
-			transferSheet++
-		}
-
+	// Before first side of a new sheet (except the very first), wait for next sheet
+	if s.sideIdx == 0 && s.physicalSheet > 0 {
 		// Check status
-		slog.Debug("checking status...")
-		conn.SetDeadline(time.Now().Add(10 * time.Second))
-		if _, err := conn.Write(MarshalGetStatus(d.token)); err != nil {
-			return pages, fmt.Errorf("status check: %w", err)
+		s.conn.SetDeadline(time.Now().Add(10 * time.Second))
+		if _, err := s.conn.Write(MarshalGetStatus(s.token)); err != nil {
+			s.done = true
+			return Page{}, fmt.Errorf("status check: %w", err)
 		}
-		statusResp, err := readResponse(conn)
+		statusResp, err := readResponse(s.conn)
 		if err != nil {
-			return pages, fmt.Errorf("status check recv: %w", err)
+			s.done = true
+			return Page{}, fmt.Errorf("status check recv: %w", err)
 		}
 		if len(statusResp) >= StatusRespScanStatusOffset+4 {
 			scanStatus := binary.BigEndian.Uint32(statusResp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
@@ -325,32 +312,116 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		if len(statusResp) >= StatusRespErrorOffset+4 {
 			errorField := binary.BigEndian.Uint32(statusResp[StatusRespErrorOffset : StatusRespErrorOffset+4])
 			if errorCode := errorField & 0xFFFF; errorCode != 0 {
-				kind := ScanErrGeneric
+				s.done = true
 				msg := fmt.Sprintf("scanner error 0x%04X", errorCode)
-				slog.Warn(msg, "errorCode", fmt.Sprintf("0x%04X", errorCode), "pages", len(pages))
-				return pages, &ScanError{Kind: kind, Msg: msg}
+				slog.Warn(msg, "errorCode", fmt.Sprintf("0x%04X", errorCode))
+				return Page{}, &ScanError{Kind: ScanErrGeneric, Msg: msg}
 			}
 		}
 
-		// Wait for next sheet
+		// Wait for next sheet — this is what causes the scanner to feed
 		slog.Debug("waiting for next sheet...")
-		conn.SetDeadline(time.Now().Add(30 * time.Second))
-		if _, err := conn.Write(MarshalWaitForScan(d.token)); err != nil {
-			return pages, fmt.Errorf("wait next sheet: %w", err)
+		s.conn.SetDeadline(time.Now().Add(30 * time.Second))
+		if _, err := s.conn.Write(MarshalWaitForScan(s.token)); err != nil {
+			s.done = true
+			return Page{}, fmt.Errorf("wait next sheet: %w", err)
 		}
-		resp, err := readResponse(conn)
+		resp, err := readResponse(s.conn)
 		if err != nil {
-			return pages, fmt.Errorf("wait next sheet recv: %w", err)
+			s.done = true
+			return Page{}, fmt.Errorf("wait next sheet recv: %w", err)
 		}
 		if len(resp) >= WaitRespStatusOffset+4 {
 			waitStatus := binary.BigEndian.Uint32(resp[WaitRespStatusOffset : WaitRespStatusOffset+4])
 			if waitStatus != 0 {
 				slog.Info("scan complete", "waitStatus", waitStatus)
-				break
+				s.done = true
+				return Page{}, io.EOF
 			}
 		}
+	}
 
-		physicalSheet++
+	// Transfer this page side
+	backSide := s.sideIdx == 1
+	jpeg, err := s.dc.transferPageChunks(s.conn, s.transferSheet, backSide)
+	if err != nil {
+		s.done = true
+		return Page{}, fmt.Errorf("page transfer: %w", err)
+	}
+
+	page := Page{Sheet: s.physicalSheet, Side: s.sideIdx, JPEG: jpeg}
+	slog.Info("page received", "sheet", s.physicalSheet, "side", s.sideIdx, "bytes", len(jpeg))
+
+	// Page metadata (REQUEST SENSE — carries SCSI sense data with error info)
+	s.conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err := s.conn.Write(MarshalGetPageMetadata(s.token)); err != nil {
+		s.done = true
+		return page, fmt.Errorf("page metadata: %w", err)
+	}
+	metaResp, err := readResponse(s.conn)
+	if err != nil {
+		s.done = true
+		return page, fmt.Errorf("page metadata recv: %w", err)
+	}
+	if senseErr := parseSenseError(metaResp); senseErr != nil {
+		slog.Warn("scanner error in sense data", "err", senseErr, "kind", senseErr.Kind)
+		s.done = true
+		return page, senseErr
+	}
+
+	s.transferSheet++
+	s.sideIdx++
+	if s.sideIdx >= s.sidesPerSheet {
+		s.sideIdx = 0
+		s.physicalSheet++
+	}
+
+	return page, nil
+}
+
+// Close ends the scan session and releases the TCP connection.
+// It sends the EndScan command to reset the scanner state.
+func (s *ScanSession) Close() error {
+	if s.conn == nil {
+		return nil
+	}
+	s.conn.SetDeadline(time.Now().Add(5 * time.Second))
+	if _, err := s.conn.Write(MarshalEndScan(s.token)); err != nil {
+		slog.Debug("end scan send failed", "err", err)
+	} else if _, err := readResponse(s.conn); err != nil {
+		slog.Debug("end scan response failed", "err", err)
+	} else {
+		slog.Debug("end scan session OK")
+	}
+	err := s.conn.Close()
+	s.conn = nil
+	s.done = true
+	return err
+}
+
+// RunScan executes a full scan session and returns all scanned pages.
+// This is a convenience wrapper around StartScan + NextPage for callers
+// that want all pages at once (e.g. button scan).
+func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error) {
+	session, err := d.StartScan(cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer session.Close()
+
+	var pages []Page
+	for {
+		page, err := session.NextPage()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return pages, err
+		}
+		pages = append(pages, page)
+		if onPage != nil {
+			onPage(page)
+		}
 	}
 
 	nonEmpty := 0
@@ -458,18 +529,45 @@ func parseSenseError(resp []byte) *ScanError {
 	return &ScanError{Kind: ScanErrGeneric, Msg: fmt.Sprintf("unknown error (Key=0x%02X, ASC=0x%02X, ASCQ=0x%02X)", senseKey, asc, ascq)}
 }
 
-// CheckADFStatus queries the scanner ADF status and returns whether paper is present.
-func (d *DataChannel) CheckADFStatus() (bool, error) {
+// CheckSenseStatus sends a REQUEST SENSE to probe for scanner error conditions
+// (paper jam, cover open, multi-feed, etc.). Returns nil if no error.
+func (d *DataChannel) CheckSenseStatus() *ScanError {
+	resp, err := d.request(MarshalGetPageMetadata(d.token))
+	if err != nil {
+		slog.Debug("sense status check failed", "err", err)
+		return nil
+	}
+	return parseSenseError(resp)
+}
+
+// ADFStatus holds the result of an ADF status check.
+type ADFStatus struct {
+	HasPaper  bool   // paper present in ADF
+	HasJam    bool   // paper jam detected (bit 15 of scan_status)
+	ErrorCode uint16 // error code from GET_STATUS offset 44 (0 = no error)
+}
+
+// CheckADFStatus queries the scanner ADF status.
+// This method is only called in idle context (not during active scanning),
+// so bit 15 (ADFJamMask) reliably indicates a paper jam condition.
+func (d *DataChannel) CheckADFStatus() (*ADFStatus, error) {
 	slog.Debug("checking ADF status...")
 	resp, err := d.request(MarshalGetStatus(d.token))
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	if len(resp) < StatusRespScanStatusOffset+4 {
-		return false, errors.New("status response too short for ADF check")
+		return nil, errors.New("status response too short for ADF check")
 	}
 	scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
-	hasPaper := HasPaper(scanStatus)
-	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", hasPaper)
-	return hasPaper, nil
+	result := &ADFStatus{
+		HasPaper: HasPaper(scanStatus),
+		HasJam:   scanStatus&ADFJamMask != 0,
+	}
+	if len(resp) >= StatusRespErrorOffset+4 {
+		errorField := binary.BigEndian.Uint32(resp[StatusRespErrorOffset : StatusRespErrorOffset+4])
+		result.ErrorCode = uint16(errorField & 0xFFFF)
+	}
+	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", result.HasPaper, "jam", result.HasJam, "errorCode", fmt.Sprintf("0x%04X", result.ErrorCode))
+	return result, nil
 }

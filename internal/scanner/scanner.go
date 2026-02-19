@@ -159,6 +159,17 @@ func (s *Scanner) Connect(ctx context.Context) error {
 	return nil
 }
 
+// StartScan begins a lazy scan session. Pages are pulled one at a time via
+// ScanSession.NextPage, allowing the client to stop after any page.
+func (s *Scanner) StartScan(cfg vens.ScanConfig) (*vens.ScanSession, error) {
+	if !s.Online() {
+		return nil, fmt.Errorf("scanner not connected")
+	}
+	slog.Info("starting scan session", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex, "paperSize", cfg.PaperSize)
+	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
+	return dataCh.StartScan(cfg)
+}
+
 // Scan executes a scan with the given config and returns pages.
 func (s *Scanner) Scan(cfg vens.ScanConfig, onPage func(vens.Page)) ([]vens.Page, error) {
 	if !s.Online() {
@@ -275,10 +286,19 @@ func (s *Scanner) tryReconnect(ctx context.Context) {
 	}
 }
 
-// CheckADFStatus queries the scanner's ADF and returns whether paper is present.
-func (s *Scanner) CheckADFStatus() (bool, error) {
+// CheckSenseStatus probes the scanner for error conditions via REQUEST SENSE.
+func (s *Scanner) CheckSenseStatus() *vens.ScanError {
 	if !s.Online() {
-		return false, fmt.Errorf("scanner not connected")
+		return nil
+	}
+	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
+	return dataCh.CheckSenseStatus()
+}
+
+// CheckADFStatus queries the scanner's ADF and returns paper/error status.
+func (s *Scanner) CheckADFStatus() (*vens.ADFStatus, error) {
+	if !s.Online() {
+		return nil, fmt.Errorf("scanner not connected")
 	}
 	dataCh := vens.NewDataChannel(s.host, s.dataPort, s.token)
 	return dataCh.CheckADFStatus()
