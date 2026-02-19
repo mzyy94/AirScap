@@ -23,11 +23,12 @@ type handler struct {
 	listenPort int
 	settings   *config.Store
 	scanStatus *scanner.ScanJobStatus // nil when button listener is disabled
+	version    string
 }
 
 // NewHandler creates an HTTP handler for the Web UI.
-func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus) http.Handler {
-	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus}
+func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string) http.Handler {
+	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version}
 	mux := http.NewServeMux()
 	staticContent, _ := fs.Sub(staticFS, "static")
 	mux.HandleFunc("GET /api/status", h.handleStatus)
@@ -46,6 +47,7 @@ type statusResponse struct {
 	Caps      capsInfo   `json:"capabilities"`
 	ESCLUrl   string     `json:"esclUrl"`
 	UpdatedAt string     `json:"updatedAt"`
+	Version   string     `json:"version"`
 }
 
 type adfStatus struct {
@@ -85,6 +87,7 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 			FirmwareRevision: h.sc.FirmwareRevision(),
 		},
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		Version:   h.version,
 	}
 
 	if online {

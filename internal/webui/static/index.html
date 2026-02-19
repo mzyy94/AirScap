@@ -46,13 +46,6 @@
     @keyframes spin {
       to { transform: rotate(360deg); }
     }
-    .tag-pulse {
-      animation: pulse 2s infinite;
-    }
-    @keyframes pulse {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.6; }
-    }
   </style>
 </head>
 <body x-data="app()" x-init="init()">
@@ -61,9 +54,11 @@
     <div class="navbar-brand is-flex-grow-1 is-justify-content-space-between">
       <span class="navbar-item has-text-white is-size-5 has-text-weight-semibold" style="letter-spacing: 0.05em;">airscap</span>
       <div class="navbar-item">
-        <span x-cloak x-show="status?.online" class="tag is-success is-rounded tag-pulse">Online</span>
-        <span x-cloak x-show="status && !status.online" class="tag is-danger is-rounded">Offline</span>
-        <span x-show="!status" class="tag is-rounded is-skeleton">Loading</span>
+        <div x-cloak x-show="status?.online" class="tags has-addons mb-0">
+          <span class="tag is-success is-rounded">Online</span>
+          <span class="tag is-rounded" x-text="status?.version ?? 'Unknown'"></span>
+        </div>
+        <span x-cloak x-show="!status?.online" class="tag is-danger is-rounded" :class="status || 'is-skeleton'">Offline</span>
       </div>
     </div>
   </nav>

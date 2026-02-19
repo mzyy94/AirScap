@@ -25,6 +25,9 @@ import (
 	"github.com/mzyy94/airscap/internal/webui"
 )
 
+// Version is set at build time via -ldflags "-X main.version=..."
+var version = "dev"
+
 func main() {
 	logLevel := parseLogLevel(envStr("AIRSCAP_LOG_LEVEL", "info"))
 	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: logLevel})))
@@ -201,7 +204,7 @@ func main() {
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
 	// Web UI for status and settings
-	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus)))
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 
