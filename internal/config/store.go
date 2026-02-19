@@ -10,17 +10,19 @@ import (
 
 // Settings holds user-configurable scan defaults.
 type Settings struct {
-	ColorMode   string `json:"colorMode"`
-	Resolution  int    `json:"resolution"`
-	Duplex      bool   `json:"duplex"`
-	Format      string `json:"format"`
-	SaveType       string `json:"saveType"` // "none", "local", "ftp", "paperless"
-	SavePath       string `json:"savePath"` // directory path when SaveType="local"
-	FTPHost        string `json:"ftpHost"`
-	FTPUser        string `json:"ftpUser"`
-	FTPPassword    string `json:"ftpPassword"`
-	PaperlessURL   string `json:"paperlessUrl"`
-	PaperlessToken string `json:"paperlessToken"`
+	ColorMode        string `json:"colorMode"`
+	Resolution       int    `json:"resolution"`
+	Duplex           bool   `json:"duplex"`
+	Format           string `json:"format"`
+	BlankPageRemoval *bool  `json:"blankPageRemoval"` // nil = default (true)
+	BleedThrough     bool   `json:"bleedThrough"`
+	SaveType         string `json:"saveType"` // "none", "local", "ftp", "paperless"
+	SavePath         string `json:"savePath"` // directory path when SaveType="local"
+	FTPHost          string `json:"ftpHost"`
+	FTPUser          string `json:"ftpUser"`
+	FTPPassword      string `json:"ftpPassword"`
+	PaperlessURL     string `json:"paperlessUrl"`
+	PaperlessToken   string `json:"paperlessToken"`
 }
 
 // DefaultSettings returns the default scan settings.

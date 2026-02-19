@@ -99,6 +99,10 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	}
 
 	cfg.Duplex = s.Duplex
+	if s.BlankPageRemoval != nil {
+		cfg.BlankPageRemoval = *s.BlankPageRemoval
+	}
+	cfg.BleedThrough = s.BleedThrough
 	return cfg
 }
 

@@ -14,6 +14,9 @@ const MESSAGES = {
   paperLoaded:      { en: 'Paper loaded', ja: '用紙あり' },
   noPaper:          { en: 'No paper',     ja: '用紙なし' },
   lastUpdated:      { en: 'Last updated', ja: '最終更新' },
+  adfErr_jam:       { en: 'Paper jam',    ja: '紙詰まり' },
+  adfErr_hatchOpen: { en: 'Cover open',   ja: 'カバーオープン' },
+  adfErr_multiFeed: { en: 'Multi-feed',   ja: '重送検知' },
 
   // Device info
   name:             { en: 'Name',         ja: '名前' },
@@ -31,11 +34,13 @@ const MESSAGES = {
   outputFormat:     { en: 'Output Format', ja: '出力形式' },
 
   // Scan settings
-  colorMode:        { en: 'Color Mode',    ja: 'カラーモード' },
-  saved:            { en: 'Saved',         ja: '保存済み' },
-  saveFailed:       { en: 'Save failed',   ja: '保存失敗' },
-  singleSided:      { en: 'Single-sided',  ja: '片面スキャン' },
-  doubleSided:      { en: 'Double-sided',  ja: '両面スキャン' },
+  colorMode:        { en: 'Color Mode',              ja: 'カラーモード' },
+  saved:            { en: 'Saved',                   ja: '保存済み' },
+  saveFailed:       { en: 'Save failed',             ja: '保存失敗' },
+  singleSided:      { en: 'Single-sided',            ja: '片面スキャン' },
+  doubleSided:      { en: 'Double-sided',            ja: '両面スキャン' },
+  blankPageRemoval: { en: 'Blank page removal',      ja: '白紙ページスキップ' },
+  bleedThrough:     { en: 'Bleed-through reduction', ja: '裏写り軽減' },
 
   // Save destination
   disabled:         { en: 'Disabled',       ja: '保存しない' },

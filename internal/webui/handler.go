@@ -51,7 +51,8 @@ type statusResponse struct {
 }
 
 type adfStatus struct {
-	Loaded bool `json:"loaded"`
+	Loaded bool   `json:"loaded"`
+	Error  string `json:"error,omitempty"` // "jam", "hatchOpen", "multiFeed", or ""
 }
 
 type deviceInfo struct {
@@ -93,7 +94,16 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 	if online {
 		hasPaper, err := h.adapter.CheckADFStatus()
 		if err == nil {
-			resp.ADF = &adfStatus{Loaded: hasPaper}
+			adf := &adfStatus{Loaded: hasPaper}
+			switch h.adapter.LastErrorKind() {
+			case vens.ScanErrPaperJam:
+				adf.Error = "jam"
+			case vens.ScanErrCoverOpen:
+				adf.Error = "hatchOpen"
+			case vens.ScanErrMultiFeed:
+				adf.Error = "multiFeed"
+			}
+			resp.ADF = adf
 		}
 	}
 

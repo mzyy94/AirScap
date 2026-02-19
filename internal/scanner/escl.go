@@ -269,7 +269,7 @@ func (a *ESCLAdapter) ADFState() escl.ADFState {
 		case vens.ScanErrPaperJam:
 			return escl.ScannerAdfJam
 		case vens.ScanErrCoverOpen:
-			return escl.ScannerAdfCoverOpen
+			return escl.ScannerAdfHatchOpen
 		case vens.ScanErrMultiFeed:
 			return escl.ScannerAdfMultipickDetected
 		default:
@@ -280,6 +280,16 @@ func (a *ESCLAdapter) ADFState() escl.ADFState {
 		return escl.ScannerAdfEmpty
 	}
 	return escl.ScannerAdfLoaded
+}
+
+// LastErrorKind returns the current scanner error kind, or -1 if no error.
+func (a *ESCLAdapter) LastErrorKind() vens.ScanErrorKind {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.lastScanErr == nil {
+		return -1
+	}
+	return a.lastScanErr.Kind
 }
 
 // Close closes the scanner connection.

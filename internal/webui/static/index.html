@@ -63,10 +63,13 @@
           </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center" x-show="status?.adf != null">
             <span class="is-size-7 has-text-grey">ADF</span>
-            <span class="tag is-rounded"
-              :class="status?.adf?.loaded ? 'is-primary' : 'is-light'"
-              x-text="status?.adf?.loaded ? t('paperLoaded') : t('noPaper')">
-            </span>
+            <div class="tags mb-0">
+              <span class="tag is-rounded"
+                :class="status?.adf?.loaded ? 'is-primary' : 'is-light'"
+                x-text="status?.adf?.loaded ? t('paperLoaded') : t('noPaper')">
+              </span>
+              <span x-show="status?.adf?.error" class="tag is-danger is-rounded" x-text="t('adfErr_' + (status?.adf?.error || ''))"></span>
+            </div>
           </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey" x-text="t('lastUpdated')"></span>
@@ -199,6 +202,22 @@
             <div class="buttons has-addons">
               <button type="button" class="button" :class="!scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = false; debounceSaveSettings()" x-text="t('singleSided')"></button>
               <button type="button" class="button" :class="scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = true; debounceSaveSettings()" x-text="t('doubleSided')"></button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label is-small" x-text="t('blankPageRemoval')"></label>
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="scanConfig.blankPageRemoval ? 'is-primary is-selected' : ''" @click="scanConfig.blankPageRemoval = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.blankPageRemoval ? 'is-primary is-selected' : ''" @click="scanConfig.blankPageRemoval = false; debounceSaveSettings()">OFF</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="label is-small" x-text="t('bleedThrough')"></label>
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="scanConfig.bleedThrough ? 'is-primary is-selected' : ''" @click="scanConfig.bleedThrough = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.bleedThrough ? 'is-primary is-selected' : ''" @click="scanConfig.bleedThrough = false; debounceSaveSettings()">OFF</button>
             </div>
           </div>
 
@@ -367,7 +386,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
         settingsSaved: false,
@@ -410,6 +429,8 @@
               resolution: String(s.resolution ?? 0),
               duplex: s.duplex || false,
               format: s.format || 'application/pdf',
+              blankPageRemoval: s.blankPageRemoval ?? true,
+              bleedThrough: s.bleedThrough || false,
               saveType: s.saveType || 'none',
               savePath: s.savePath || '',
               ftpHost: s.ftpHost || '',
@@ -457,6 +478,8 @@
               resolution: Number(this.scanConfig.resolution),
               duplex: this.scanConfig.duplex,
               format: this.scanConfig.format,
+              blankPageRemoval: this.scanConfig.blankPageRemoval,
+              bleedThrough: this.scanConfig.bleedThrough,
               saveType: this.scanConfig.saveType,
               savePath: this.scanConfig.savePath,
               ftpHost: this.scanConfig.ftpHost,
