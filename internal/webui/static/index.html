@@ -8,51 +8,16 @@
   <script defer src="alpine.min.js"></script>
   <style>
     [x-cloak] { display: none !important; }
-    .status-row {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0.5rem 0;
-    }
-    .status-row + .status-row {
-      border-top: 1px solid #f0f0f0;
-    }
-    .info-grid {
-      display: grid;
-      grid-template-columns: 8rem 1fr;
-      gap: 0.4rem 1rem;
-      font-size: 0.875rem;
-    }
+    .info-grid { grid-template-columns: 8rem 1fr !important; }
     .info-grid dt { color: #7a7a7a; }
     .info-grid dd { font-weight: 500; word-break: break-all; }
-    .escl-url {
-      font-family: 'SF Mono', Monaco, Consolas, monospace;
-      font-size: 0.875rem;
-      background: #f5f5f5;
-      padding: 0.5rem 0.75rem;
-      border-radius: 6px;
-      word-break: break-all;
-    }
-    .spinner {
-      display: inline-block;
-      border: 3px solid rgba(0,0,0,0.1);
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-      width: 2rem;
-      height: 2rem;
-      border-width: 3px;
-      border-top-color: #485fc7;
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
-    }
   </style>
 </head>
 <body x-data="app()" x-init="init()">
   <!-- Header -->
   <nav class="navbar is-dark px-5" role="navigation">
     <div class="navbar-brand is-flex-grow-1 is-justify-content-space-between">
-      <span class="navbar-item has-text-white is-size-5 has-text-weight-semibold" style="letter-spacing: 0.05em;">airscap</span>
+      <span class="navbar-item has-text-white is-size-5 has-text-weight-semibold">airscap</span>
       <div class="navbar-item">
         <div x-cloak x-show="status?.online" class="tags has-addons mb-0">
           <span class="tag is-success is-rounded">Online</span>
@@ -65,8 +30,8 @@
 
   <div class="container is-max-tablet py-4">
       <!-- Loading -->
-      <div class="has-text-centered py-6" x-show="!status">
-        <span class="spinner"></span>
+      <div class="columns is-centered py-6" x-show="!status">
+        <span class="loader is-size-1"></span>
       </div>
 
       <!-- Connection Status -->
@@ -80,27 +45,27 @@
         <div class="card-content">
 
           <div x-show="status && !status.online" x-transition class="notification is-warning is-light mb-4 py-3 px-4">
-            <div class="is-flex is-align-items-start" style="gap: 0.5rem;">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:2px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div class="icon-text">
+              <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
               <span class="is-size-7">スキャナーとの接続が切れています。再接続を試みています...</span>
             </div>
           </div>
 
-          <div class="status-row">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey">接続</span>
             <span class="tag is-rounded"
               :class="status?.online ? 'is-success' : 'is-danger'"
               x-text="status?.online ? 'Online' : 'Offline'">
             </span>
           </div>
-          <div class="status-row" x-show="status?.adf != null">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center" x-show="status?.adf != null">
             <span class="is-size-7 has-text-grey">ADF</span>
             <span class="tag is-rounded"
               :class="status?.adf?.loaded ? 'is-primary' : 'is-light'"
               x-text="status?.adf?.loaded ? '用紙あり' : '用紙なし'">
             </span>
           </div>
-          <div class="status-row">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey">最終更新</span>
             <span class="is-size-7 has-text-grey-light" x-text="relativeTime(status?.updatedAt, tick)"></span>
           </div>
@@ -115,8 +80,8 @@
           </span>
           <p class="card-header-title">デバイス情報</p>
         </header>
-        <div class="card-content">
-          <dl class="info-grid">
+        <div class="card-content fixed-grid">
+          <dl class="info-grid grid is-column-gap-1 is-row-gap-0.5 is-size-7">
             <dt>名前</dt>
             <dd x-text="status?.device?.name || '-'"></dd>
             <dt>シリアル</dt>
@@ -140,7 +105,7 @@
           <p class="card-header-title">スキャン機能</p>
         </header>
         <div class="card-content">
-          <div class="status-row">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey">解像度</span>
             <div class="tags mb-0">
               <template x-for="r in (status?.capabilities?.resolutions || [])">
@@ -148,7 +113,7 @@
               </template>
             </div>
           </div>
-          <div class="status-row">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey">カラー</span>
             <div class="tags mb-0">
               <template x-for="m in (status?.capabilities?.colorModes || [])">
@@ -156,14 +121,14 @@
               </template>
             </div>
           </div>
-          <div class="status-row">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey">両面</span>
             <span class="tag is-rounded"
               :class="status?.capabilities?.duplex ? 'is-success' : 'is-light'"
               x-text="status?.capabilities?.duplex ? '対応' : '非対応'">
             </span>
           </div>
-          <div class="status-row">
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey">出力形式</span>
             <div class="tags mb-0">
               <template x-for="f in (status?.capabilities?.formats || [])">
@@ -181,7 +146,7 @@
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
           </span>
           <p class="card-header-title">スキャン設定</p>
-          <span class="card-header-icon" style="gap: 0.25rem;">
+          <span class="card-header-icon">
             <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
             <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7">保存失敗</span>
           </span>
@@ -244,7 +209,7 @@
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
           </span>
           <p class="card-header-title">保存先</p>
-          <span class="card-header-icon" style="gap: 0.25rem;">
+          <span class="card-header-icon">
             <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
             <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7">保存失敗</span>
           </span>
@@ -347,8 +312,8 @@
         </header>
         <div class="card-content">
           <template x-if="scanJob.scanning">
-            <div class="is-flex is-align-items-center" style="gap: 0.75rem;">
-              <span class="spinner" style="width:1.5rem; height:1.5rem; border-width:2px;"></span>
+            <div class="icon-text">
+              <span class="icon loader is-size-4"></span>
               <span class="is-size-7">スキャン中...</span>
             </div>
           </template>
@@ -376,13 +341,25 @@
           <p class="card-header-title">eSCL エンドポイント</p>
         </header>
         <div class="card-content">
-          <div class="escl-url" x-text="status?.esclUrl"></div>
-          <p class="is-size-7 has-text-grey-light mt-2">
-            SANE / macOS Image Capture / Windows WSD から利用できます
-          </p>
+          <div class="field">
+            <div class="control">
+              <input class="input is-family-monospace" readonly :value="status?.esclUrl" />
+            </div>
+            <p class="help">
+              Linux SANE / macOS Image Capture / Windows WSD から利用できます
+            </p>
+          </div>
         </div>
       </div>
   </div>
+  <footer class="footer">
+    <div class="content has-text-centered">
+      <p>
+        <strong>AirScap</strong> by <a href="https://mzyy94.com">mzyy94</a>.
+        The <a href="https://github.com/mzyy94/airscap">source code</a> is licensed under <a href="https://opensource.org/license/mit">MIT</a>.
+      </p>
+    </div>
+  </footer>
 
   <script>
     function app() {
