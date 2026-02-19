@@ -1,0 +1,197 @@
+<h2 align="center">AirScap</h2>
+
+<h3 align="center">AirScan bridge for legacy Wi-Fi ScanSnap scanners</h3>
+
+<p align="center">
+  <a href="https://github.com/mzyy94/airscap/actions/workflows/ci.yml"><img src="https://github.com/mzyy94/airscap/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+  <a href="https://github.com/mzyy94/airscap/releases"><img src="https://img.shields.io/github/v/release/mzyy94/airscap" alt="Release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/mzyy94/airscap" alt="License"></a>
+</p>
+
+<p align="center">
+  <a href="#installation">Installation</a>&ensp;&bull;&ensp;
+  <a href="#quick-start">Quick Start</a>&ensp;&bull;&ensp;
+  <a href="#web-ui">Web UI</a>&ensp;&bull;&ensp;
+  <a href="#configuration">Configuration</a>&ensp;&bull;&ensp;
+  <a href="protocol.en.md">Protocol Docs</a>&ensp;&bull;&ensp;
+  <a href="README.md">日本語</a>
+</p>
+
+---
+
+## What is AirScap?
+
+The **ScanSnap Connect Application** that enabled Wi-Fi scanning for the iX500 has been discontinued. The currently available ScanSnap Home does not support the iX500, leaving no way to scan over Wi-Fi. AirScap is a protocol bridge that brings legacy ScanSnap scanners including the iX500 back to life by making them AirScan-compatible.
+
+It natively implements the proprietary **VENS** protocol used by ScanSnap iX500 over Wi-Fi in Go, and exposes it as a standard **eSCL (AirScan)** network scanner.
+
+| Platform | Client |
+|----------|--------|
+| **macOS** | Image Capture, Preview |
+| **Linux** | SANE (`sane-airscan`), scanservjs |
+| **Windows** | Windows Scan (WSD) |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                     Your Network                        │
+│                                                         │
+│   macOS Image Capture ─┐                                │
+│   Linux SANE ──────────┤  eSCL (HTTP)                   │
+│   Windows Scan ────────┤                                │
+│   iOS / Android ───────┤                                │
+│                        ▼                                │
+│              ┌──────────────────┐    VENS (UDP/TCP)     │
+│              │     AirScap      │◀──────────────────▶   │
+│              │                  │                   ▲   │
+│              │  eSCL Server     │              ScanSnap  │
+│              │  mDNS (_uscan)   │               iX500   │
+│              │  Web UI (:8080)  │                        │
+│              └──────────────────┘                        │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Features
+
+- **Driver-free scanning** &mdash; Works with any eSCL/AirScan client out of the box
+- **Zero configuration** &mdash; Auto-discovers ScanSnap on the network and connects
+- **Versatile scanning** &mdash; Color / grayscale / B&W, duplex, PDF / JPEG / TIFF output
+- **Physical button support** &mdash; Press the scanner button to trigger a scan job. Save to local folder / FTP / [Paperless-ngx] from your choice
+- **Web UI** &mdash; Configure settings and monitor status from your browser (English / Japanese)
+- **Single binary** &mdash; Built in Go, zero runtime dependencies. Ships with a systemd service unit
+
+[Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
+
+## Prerequisites
+
+> **Note:** AirScap cannot perform the initial Wi-Fi setup of the scanner (connecting it to an access point).
+> Use the ScanSnap setup tool or the WPS button to connect the scanner to your network beforehand.
+
+## Installation
+
+### From Release (Debian/Ubuntu)
+
+Download the `.deb` package from the [Releases](https://github.com/mzyy94/airscap/releases) page:
+
+```bash
+# Download the latest release
+curl -LO https://github.com/mzyy94/airscap/releases/latest/download/airscap_amd64.deb
+
+# Install
+sudo dpkg -i airscap_amd64.deb
+
+# Edit configuration
+sudo vi /etc/airscap/env
+
+# Start the service
+sudo systemctl enable --now airscap
+```
+
+The deb package includes the binary, systemd service unit, and default configuration.
+
+### From Source
+
+Requires Go 1.25+.
+
+```bash
+go install github.com/mzyy94/airscap/cmd/airscap@latest
+```
+
+Or clone and build:
+
+```bash
+git clone https://github.com/mzyy94/airscap.git
+cd airscap
+go build -o airscap ./cmd/airscap/
+```
+
+### systemd (manual)
+
+```bash
+sudo cp airscap /usr/local/bin/
+sudo cp dist/airscap.service /etc/systemd/system/
+sudo mkdir -p /etc/airscap
+sudo cp dist/env.example /etc/airscap/env
+sudo vi /etc/airscap/env
+
+sudo systemctl daemon-reload
+sudo systemctl enable --now airscap
+```
+
+## Quick Start
+
+```bash
+# Auto-discover scanner, auto-derive password from serial number
+./airscap
+
+# Or specify password explicitly
+AIRSCAP_PASSWORD=0700 ./airscap
+
+# Specify scanner IP directly
+AIRSCAP_PASSWORD=0700 AIRSCAP_SCANNER_IP=192.168.1.100 ./airscap
+```
+
+Once running, AirScap will:
+
+1. Discover your ScanSnap on the local network (or connect to the specified IP)
+2. Pair using the scanner password
+3. Start an eSCL server on port 8080
+4. Register via mDNS so clients discover it automatically
+5. Serve a Web UI at `http://localhost:8080/ui/`
+
+## Web UI
+
+Access the built-in management interface at `http://<host>:8080/ui/`.
+
+- **Status** &mdash; Connection state, ADF paper presence
+- **Device Info** &mdash; Scanner name, serial, IP, firmware revision
+- **Scan Settings** &mdash; Color mode, resolution, duplex, output format
+- **Save Destination** &mdash; Configure local folder / FTP / Paperless-ngx for button scans
+- **eSCL Endpoint** &mdash; URL for manual eSCL client configuration
+- **i18n** &mdash; English / Japanese toggle
+
+## Configuration
+
+Scanner discovery and startup settings are configured via environment variables.
+
+| Variable | Default | Description | Notes |
+|---|---|---|---|
+| `AIRSCAP_PASSWORD` | auto-derive | Scanner pairing password | \* |
+| `AIRSCAP_PASSWORD_FILE` | &mdash; | Path to password file | \* |
+| `AIRSCAP_SCANNER_IP` | auto-discover | Scanner IP address | |
+| `AIRSCAP_LISTEN_PORT` | `8080` | HTTP listen port | |
+| `AIRSCAP_DEVICE_NAME` | from scanner | mDNS display name | |
+| `AIRSCAP_LOG_LEVEL` | `info` | Log level (`debug` / `info` / `warn` / `error`) | |
+| `AIRSCAP_DATA_DIR` | no persistence | Directory for persistent settings | \*\* |
+
+\* If you have changed the default password, specify the password you set. Use one or the other.
+\*\* When running under systemd, settings are persisted to `STATE_DIRECTORY` even if unset.
+
+See [`dist/env.example`](dist/env.example) for a full template.
+
+## Verify
+
+```bash
+# Check mDNS advertisement (macOS)
+dns-sd -B _uscan._tcp
+
+# Check eSCL capabilities
+curl -s http://localhost:8080/eSCL/ScannerCapabilities | head -20
+
+# Scan via SANE
+scanimage -L
+scanimage --device 'airscan:e0:ScanSnap iX500' --format=jpeg -o scan.jpg
+```
+
+## Protocol
+
+AirScap implements the **VENS** protocol &mdash; a proprietary binary protocol used by Fujitsu/Ricoh ScanSnap scanners over Wi-Fi. The implementation is based on analysis of packet captures from the official application.
+
+Full protocol documentation:
+- [protocol.md](protocol.md) (Japanese)
+- [protocol.en.md](protocol.en.md) (English)
+
+## License
+
+[MIT](LICENSE)
