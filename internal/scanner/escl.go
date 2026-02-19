@@ -17,17 +17,23 @@ import (
 
 // ESCLAdapter implements abstract.Scanner for ScanSnap hardware.
 type ESCLAdapter struct {
-	scanner    *Scanner
-	listenPort int
-	caps       *abstract.ScannerCapabilities
-	adfEmpty   bool // true after a scan session completes (ADF likely exhausted)
+	scanner          *Scanner
+	listenPort       int
+	caps             *abstract.ScannerCapabilities
+	adfEmpty         bool // true after a scan session completes (ADF likely exhausted)
+	blankPageRemoval bool // controlled by eSCL BlankPageDetectionAndRemoval
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
 func NewESCLAdapter(s *Scanner, listenPort int) *ESCLAdapter {
-	a := &ESCLAdapter{scanner: s, listenPort: listenPort}
+	a := &ESCLAdapter{scanner: s, listenPort: listenPort, blankPageRemoval: true}
 	a.caps = a.buildCapabilities()
 	return a
+}
+
+// SetBlankPageRemoval sets whether blank page removal is active for the next scan.
+func (a *ESCLAdapter) SetBlankPageRemoval(enabled bool) {
+	a.blankPageRemoval = enabled
 }
 
 func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
@@ -106,11 +112,13 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	}
 
 	cfg := mapScanConfig(req)
+	cfg.BlankPageRemoval = a.blankPageRemoval
 	slog.Info("scan requested",
 		"colorMode", req.ColorMode,
 		"resolution", req.Resolution,
 		"adfMode", req.ADFMode,
 		"duplex", cfg.Duplex,
+		"blankPageRemoval", cfg.BlankPageRemoval,
 	)
 
 	pages, err := a.scanner.Scan(cfg, nil)

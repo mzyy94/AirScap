@@ -183,7 +183,12 @@ func main() {
 				if caps.ADF != nil {
 					caps.ADF.ADFOptions = append(caps.ADF.ADFOptions, escl.DetectPaperLoaded)
 				}
+				caps.BlankPageDetectionAndRemoval = optional.New(true)
 				return caps
+			},
+			OnScanJobsRequest: func(_ *transport.ServerQuery, ss *escl.ScanSettings) *escl.ScanSettings {
+				adapter.SetBlankPageRemoval(ss.BlankPageDetectionAndRemoval == nil || *ss.BlankPageDetectionAndRemoval)
+				return ss
 			},
 			OnScannerStatusResponse: func(_ *transport.ServerQuery, status *escl.ScannerStatus) *escl.ScannerStatus {
 				state := adapter.ScannerState()
