@@ -1,10 +1,11 @@
 <!DOCTYPE html>
-<html lang="ja">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>airscap</title>
   <link rel="stylesheet" href="bulma.min.css">
+  <script src="messages.js"></script>
   <script defer src="alpine.min.js"></script>
   <style>
     [x-cloak] { display: none !important; }
@@ -19,6 +20,8 @@
     <div class="navbar-brand is-flex-grow-1 is-justify-content-space-between">
       <span class="navbar-item has-text-white is-size-5 has-text-weight-semibold">airscap</span>
       <div class="navbar-item">
+        <button class="tag mr-2" @click="lang = lang === 'en' ? 'ja' : 'en'"
+          x-text="lang.toUpperCase()" style="cursor:pointer"></button>
         <div x-cloak x-show="status?.online" class="tags has-addons mb-0">
           <span class="tag is-success is-rounded">Online</span>
           <span class="tag is-rounded" x-text="status?.version ?? 'Unknown'"></span>
@@ -40,19 +43,19 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
           </span>
-          <p class="card-header-title">ステータス</p>
+          <p class="card-header-title" x-text="t('status')"></p>
         </header>
         <div class="card-content">
 
           <div x-show="status && !status.online" x-transition class="notification is-warning is-light mb-4 py-3 px-4">
             <div class="icon-text">
               <span class="icon"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span>
-              <span class="is-size-7">スキャナーとの接続が切れています。再接続を試みています...</span>
+              <span class="is-size-7" x-text="t('disconnectWarn')"></span>
             </div>
           </div>
 
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
-            <span class="is-size-7 has-text-grey">接続</span>
+            <span class="is-size-7 has-text-grey" x-text="t('connection')"></span>
             <span class="tag is-rounded"
               :class="status?.online ? 'is-success' : 'is-danger'"
               x-text="status?.online ? 'Online' : 'Offline'">
@@ -62,11 +65,11 @@
             <span class="is-size-7 has-text-grey">ADF</span>
             <span class="tag is-rounded"
               :class="status?.adf?.loaded ? 'is-primary' : 'is-light'"
-              x-text="status?.adf?.loaded ? '用紙あり' : '用紙なし'">
+              x-text="status?.adf?.loaded ? t('paperLoaded') : t('noPaper')">
             </span>
           </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
-            <span class="is-size-7 has-text-grey">最終更新</span>
+            <span class="is-size-7 has-text-grey" x-text="t('lastUpdated')"></span>
             <span class="is-size-7 has-text-grey-light" x-text="relativeTime(status?.updatedAt, tick)"></span>
           </div>
         </div>
@@ -78,19 +81,19 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></span>
           </span>
-          <p class="card-header-title">デバイス情報</p>
+          <p class="card-header-title" x-text="t('deviceInfo')"></p>
         </header>
         <div class="card-content fixed-grid">
           <dl class="info-grid grid is-column-gap-1 is-row-gap-0.5 is-size-7">
-            <dt>名前</dt>
+            <dt x-text="t('name')"></dt>
             <dd x-text="status?.device?.name || '-'"></dd>
-            <dt>シリアル</dt>
+            <dt x-text="t('serial')"></dt>
             <dd x-text="status?.device?.serial || '-'"></dd>
-            <dt>IP アドレス</dt>
+            <dt x-text="t('ipAddress')"></dt>
             <dd x-text="status?.device?.host || '-'"></dd>
-            <dt>メーカー</dt>
+            <dt x-text="t('manufacturer')"></dt>
             <dd x-text="status?.device?.manufacturer || '-'"></dd>
-            <dt>F/W リビジョン</dt>
+            <dt x-text="t('fwRevision')"></dt>
             <dd x-text="status?.device?.firmwareRevision || '-'"></dd>
           </dl>
         </div>
@@ -102,11 +105,11 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
           </span>
-          <p class="card-header-title">スキャン機能</p>
+          <p class="card-header-title" x-text="t('capabilities')"></p>
         </header>
         <div class="card-content">
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
-            <span class="is-size-7 has-text-grey">解像度</span>
+            <span class="is-size-7 has-text-grey" x-text="t('resolution')"></span>
             <div class="tags mb-0">
               <template x-for="r in (status?.capabilities?.resolutions || [])">
                 <span class="tag is-light is-rounded" x-text="resLabel(r)"></span>
@@ -114,7 +117,7 @@
             </div>
           </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
-            <span class="is-size-7 has-text-grey">カラー</span>
+            <span class="is-size-7 has-text-grey" x-text="t('color')"></span>
             <div class="tags mb-0">
               <template x-for="m in (status?.capabilities?.colorModes || [])">
                 <span class="tag is-light is-rounded" x-text="modeLabel(m)"></span>
@@ -122,14 +125,14 @@
             </div>
           </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
-            <span class="is-size-7 has-text-grey">両面</span>
+            <span class="is-size-7 has-text-grey" x-text="t('duplex')"></span>
             <span class="tag is-rounded"
               :class="status?.capabilities?.duplex ? 'is-success' : 'is-light'"
-              x-text="status?.capabilities?.duplex ? '対応' : '非対応'">
+              x-text="status?.capabilities?.duplex ? t('supported') : t('notSupported')">
             </span>
           </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
-            <span class="is-size-7 has-text-grey">出力形式</span>
+            <span class="is-size-7 has-text-grey" x-text="t('outputFormat')"></span>
             <div class="tags mb-0">
               <template x-for="f in (status?.capabilities?.formats || [])">
                 <span class="tag is-light is-rounded" x-text="formatLabel(f)"></span>
@@ -145,16 +148,16 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
           </span>
-          <p class="card-header-title">スキャン設定</p>
+          <p class="card-header-title" x-text="t('scanSettings')"></p>
           <span class="card-header-icon">
-            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
-            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7">保存失敗</span>
+            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
+            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7" x-text="t('saveFailed')"></span>
           </span>
         </header>
         <div class="card-content">
 
           <div class="field">
-            <label class="label is-small">カラーモード</label>
+            <label class="label is-small" x-text="t('colorMode')"></label>
             <div class="control">
               <div class="select is-fullwidth">
                 <select x-model="scanConfig.colorMode" @change="onColorModeChange()">
@@ -167,7 +170,7 @@
           </div>
 
           <div class="field">
-            <label class="label is-small">解像度</label>
+            <label class="label is-small" x-text="t('resolution')"></label>
             <div class="control">
               <div class="select is-fullwidth">
                 <select x-model="scanConfig.resolution" @change="debounceSaveSettings()">
@@ -180,7 +183,7 @@
           </div>
 
           <div class="field">
-            <label class="label is-small">出力形式</label>
+            <label class="label is-small" x-text="t('outputFormat')"></label>
             <div class="control">
               <div class="select is-fullwidth">
                 <select x-model="scanConfig.format" @change="debounceSaveSettings()">
@@ -194,8 +197,8 @@
 
           <div class="field" x-show="status?.capabilities?.duplex">
             <div class="buttons has-addons">
-              <button type="button" class="button" :class="!scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = false; debounceSaveSettings()">片面スキャン</button>
-              <button type="button" class="button" :class="scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = true; debounceSaveSettings()">両面スキャン</button>
+              <button type="button" class="button" :class="!scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = false; debounceSaveSettings()" x-text="t('singleSided')"></button>
+              <button type="button" class="button" :class="scanConfig.duplex ? 'is-primary is-selected' : ''" @click="scanConfig.duplex = true; debounceSaveSettings()" x-text="t('doubleSided')"></button>
             </div>
           </div>
 
@@ -208,10 +211,10 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
           </span>
-          <p class="card-header-title">保存先</p>
+          <p class="card-header-title" x-text="t('saveDestination')"></p>
           <span class="card-header-icon">
-            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7">保存済み</span>
-            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7">保存失敗</span>
+            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
+            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7" x-text="t('saveFailed')"></span>
           </span>
         </header>
         <div class="card-content">
@@ -220,13 +223,13 @@
             <ul>
               <li :class="scanConfig.saveType === 'none' ? 'is-active' : ''">
                 <a @click="scanConfig.saveType = 'none'; debounceSaveSettings()">
-                  <span>保存しない</span>
+                  <span x-text="t('disabled')"></span>
                 </a>
               </li>
               <li :class="scanConfig.saveType === 'local' ? 'is-active' : ''">
                 <a @click="scanConfig.saveType = 'local'; debounceSaveSettings()">
                   <span class="icon is-small"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg></span>
-                  <span>ローカルフォルダ</span>
+                  <span x-text="t('localFolder')"></span>
                 </a>
               </li>
               <li :class="scanConfig.saveType === 'ftp' ? 'is-active' : ''">
@@ -246,33 +249,33 @@
 
           <div x-show="scanConfig.saveType === 'local'" x-transition>
             <div class="field">
-              <label class="label is-small">保存ディレクトリ</label>
+              <label class="label is-small" x-text="t('saveDir')"></label>
               <div class="control">
                 <input class="input" type="text" x-model="scanConfig.savePath"
                   placeholder="/path/to/scans" @change="debounceSaveSettings()">
               </div>
-              <p class="help">スキャナのボタンを押した時にファイルを保存するディレクトリ</p>
+              <p class="help" x-text="t('saveDirHelp')"></p>
             </div>
           </div>
 
           <div x-show="scanConfig.saveType === 'ftp'" x-transition>
             <div class="field">
-              <label class="label is-small">FTP アドレス</label>
+              <label class="label is-small" x-text="t('ftpAddress')"></label>
               <div class="control">
                 <input class="input" type="text" x-model="scanConfig.ftpHost"
                   placeholder="ftp.example.com:21" @change="debounceSaveSettings()">
               </div>
-              <p class="help">ホスト名:ポート（ポート省略時は 21）</p>
+              <p class="help" x-text="t('ftpHostHelp')"></p>
             </div>
             <div class="field">
-              <label class="label is-small">ユーザー名</label>
+              <label class="label is-small" x-text="t('username')"></label>
               <div class="control">
                 <input class="input" type="text" x-model="scanConfig.ftpUser"
                   placeholder="anonymous" @change="debounceSaveSettings()">
               </div>
             </div>
             <div class="field">
-              <label class="label is-small">パスワード</label>
+              <label class="label is-small" x-text="t('password')"></label>
               <div class="control">
                 <input class="input" type="password" x-model="scanConfig.ftpPassword"
                   @change="debounceSaveSettings()">
@@ -282,20 +285,19 @@
 
           <div x-show="scanConfig.saveType === 'paperless'" x-transition>
             <div class="field">
-              <label class="label is-small">Paperless-ngx URL</label>
+              <label class="label is-small" x-text="t('paperlessBaseUrl')"></label>
               <div class="control">
                 <input class="input" type="text" x-model="scanConfig.paperlessUrl"
                   placeholder="http://paperless.local:8000" @change="debounceSaveSettings()">
               </div>
-              <p class="help">Paperless-ngx のベース URL</p>
             </div>
             <div class="field">
-              <label class="label is-small">API トークン</label>
+              <label class="label is-small" x-text="t('apiToken')"></label>
               <div class="control">
                 <input class="input" type="password" x-model="scanConfig.paperlessToken"
                   @change="debounceSaveSettings()">
               </div>
-              <p class="help">設定 > API トークン から取得</p>
+              <p class="help" x-text="t('apiTokenHelp')"></p>
             </div>
           </div>
 
@@ -308,24 +310,24 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></span>
           </span>
-          <p class="card-header-title">スキャン</p>
+          <p class="card-header-title" x-text="t('scan')"></p>
         </header>
         <div class="card-content">
           <template x-if="scanJob.scanning">
             <div class="icon-text">
               <span class="icon loader is-size-4"></span>
-              <span class="is-size-7">スキャン中...</span>
+              <span class="is-size-7" x-text="t('scanning')"></span>
             </div>
           </template>
           <template x-if="!scanJob.scanning && scanJob.lastScan && !scanJob.lastError">
             <div>
-              <span class="tag is-success is-light is-rounded" x-text="scanJob.pages + ' ページ保存完了'"></span>
+              <span class="tag is-success is-light is-rounded" x-text="scanJob.pages + t('pagesSaved')"></span>
               <span class="is-size-7 has-text-grey-light ml-2" x-text="relativeTime(scanJob.lastScan, tick)"></span>
             </div>
           </template>
           <template x-if="!scanJob.scanning && scanJob.lastError">
             <div>
-              <span class="tag is-danger is-light is-rounded">スキャン失敗</span>
+              <span class="tag is-danger is-light is-rounded" x-text="t('scanFailed')"></span>
               <span class="is-size-7 has-text-grey ml-2" x-text="scanJob.lastError"></span>
             </div>
           </template>
@@ -338,16 +340,14 @@
           <span class="card-header-icon">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
           </span>
-          <p class="card-header-title">eSCL エンドポイント</p>
+          <p class="card-header-title" x-text="t('esclEndpoint')"></p>
         </header>
         <div class="card-content">
           <div class="field">
             <div class="control">
               <input class="input is-family-monospace" readonly :value="status?.esclUrl" />
             </div>
-            <p class="help">
-              Linux SANE / macOS Image Capture / Windows WSD から利用できます
-            </p>
+            <p class="help" x-text="t('esclHelp')"></p>
           </div>
         </div>
       </div>
@@ -366,6 +366,7 @@
       return {
         status: null,
         tick: 0,
+        lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
         scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
@@ -373,7 +374,11 @@
         settingsError: false,
         _saveTimer: null,
 
+        t(key) { return MESSAGES[key]?.[this.lang] ?? MESSAGES[key]?.en ?? key; },
+
         async init() {
+          document.documentElement.lang = this.lang;
+          this.$watch('lang', (val) => { document.documentElement.lang = val; localStorage.setItem('lang', val); });
           await this.refresh();
           await this.$nextTick();
           await this.loadSettings();
@@ -497,11 +502,12 @@
         },
 
         resLabel(r) {
-          return r === 0 ? '自動' : r + ' dpi';
+          return r === 0 ? this.t('modeAuto') : r + ' dpi';
         },
 
         modeLabel(mode) {
-          return { auto: '自動', color: 'カラー', grayscale: 'グレースケール', bw: '白黒' }[mode] || mode;
+          const key = { auto: 'modeAuto', color: 'modeColor', grayscale: 'modeGrayscale', bw: 'modeBW' }[mode];
+          return key ? this.t(key) : mode;
         },
 
         get availableFormats() {
@@ -529,10 +535,11 @@
         relativeTime(isoStr, _tick) {
           if (!isoStr) return '';
           const seconds = Math.floor((Date.now() - new Date(isoStr).getTime()) / 1000);
-          if (seconds < 10) return 'たった今';
-          if (seconds < 60) return `${seconds}秒前`;
-          if (seconds < 3600) return `${Math.floor(seconds / 60)}分前`;
-          return new Date(isoStr).toLocaleTimeString('ja-JP');
+          const rtf = new Intl.RelativeTimeFormat(this.lang, { numeric: 'auto', style: 'narrow' });
+          if (seconds < 10) return rtf.format(0, 'second');
+          if (seconds < 60) return rtf.format(-seconds, 'second');
+          if (seconds < 3600) return rtf.format(-Math.floor(seconds / 60), 'minute');
+          return new Date(isoStr).toLocaleTimeString(this.lang === 'ja' ? 'ja-JP' : 'en-US');
         },
       };
     }
