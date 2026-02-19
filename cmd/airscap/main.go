@@ -179,6 +179,12 @@ func main() {
 		Scanner:  adapter,
 		BasePath: "",
 		Hooks: escl.ServerHooks{
+			OnScannerCapabilitiesResponse: func(_ *transport.ServerQuery, caps *escl.ScannerCapabilities) *escl.ScannerCapabilities {
+				if caps.ADF != nil {
+					caps.ADF.ADFOptions = append(caps.ADF.ADFOptions, escl.DetectPaperLoaded)
+				}
+				return caps
+			},
 			OnScannerStatusResponse: func(_ *transport.ServerQuery, status *escl.ScannerStatus) *escl.ScannerStatus {
 				state := adapter.ScannerState()
 				status.State = state
