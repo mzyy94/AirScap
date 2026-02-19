@@ -239,6 +239,10 @@ func (d *DataChannel) StartScan(cfg ScanConfig) (*ScanSession, error) {
 	if len(resp) >= StatusRespScanStatusOffset+4 {
 		scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 		slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
+		if scanStatus&ADFCoverOpenMask != 0 {
+			conn.Close()
+			return nil, &ScanError{Kind: ScanErrCoverOpen, Msg: "ADF cover open"}
+		}
 		if !HasPaper(scanStatus) {
 			conn.Close()
 			return nil, &ScanError{Kind: ScanErrNoPaper, Msg: "no paper in ADF"}
@@ -260,8 +264,19 @@ func (d *DataChannel) StartScan(cfg ScanConfig) (*ScanSession, error) {
 	if len(resp) >= WaitRespStatusOffset+4 {
 		waitStatus := binary.BigEndian.Uint32(resp[WaitRespStatusOffset : WaitRespStatusOffset+4])
 		if waitStatus != 0 {
+			slog.Warn("WaitForScan failed, sending REQUEST SENSE", "waitStatus", waitStatus)
+			// Send REQUEST SENSE on same connection to get specific error
+			conn.SetDeadline(time.Now().Add(10 * time.Second))
+			if _, err := conn.Write(MarshalGetPageMetadata(d.token)); err == nil {
+				if senseResp, err := readResponse(conn); err == nil {
+					if senseErr := parseSenseError(senseResp); senseErr != nil {
+						conn.Close()
+						return nil, senseErr
+					}
+				}
+			}
 			conn.Close()
-			return nil, &ScanError{Msg: fmt.Sprintf("WaitForScan returned status=%d (expected 0)", waitStatus)}
+			return nil, &ScanError{Kind: ScanErrGeneric, Msg: fmt.Sprintf("WaitForScan returned status=%d (expected 0)", waitStatus)}
 		}
 	}
 	slog.Info("scan started")
@@ -542,9 +557,10 @@ func (d *DataChannel) CheckSenseStatus() *ScanError {
 
 // ADFStatus holds the result of an ADF status check.
 type ADFStatus struct {
-	HasPaper  bool   // paper present in ADF
-	HasJam    bool   // paper jam detected (bit 15 of scan_status)
-	ErrorCode uint16 // error code from GET_STATUS offset 44 (0 = no error)
+	HasPaper     bool   // paper present in ADF
+	HasJam       bool   // paper jam detected (bit 15 of scan_status)
+	HasCoverOpen bool   // ADF cover open (bit 5 of scan_status)
+	ErrorCode    uint16 // error code from GET_STATUS offset 44 (0 = no error)
 }
 
 // CheckADFStatus queries the scanner ADF status.
@@ -561,13 +577,14 @@ func (d *DataChannel) CheckADFStatus() (*ADFStatus, error) {
 	}
 	scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 	result := &ADFStatus{
-		HasPaper: HasPaper(scanStatus),
-		HasJam:   scanStatus&ADFJamMask != 0,
+		HasPaper:    HasPaper(scanStatus),
+		HasJam:      scanStatus&ADFJamMask != 0,
+		HasCoverOpen: scanStatus&ADFCoverOpenMask != 0,
 	}
 	if len(resp) >= StatusRespErrorOffset+4 {
 		errorField := binary.BigEndian.Uint32(resp[StatusRespErrorOffset : StatusRespErrorOffset+4])
 		result.ErrorCode = uint16(errorField & 0xFFFF)
 	}
-	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", result.HasPaper, "jam", result.HasJam, "errorCode", fmt.Sprintf("0x%04X", result.ErrorCode))
+	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", result.HasPaper, "jam", result.HasJam, "coverOpen", result.HasCoverOpen, "errorCode", fmt.Sprintf("0x%04X", result.ErrorCode))
 	return result, nil
 }

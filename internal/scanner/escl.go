@@ -212,7 +212,13 @@ func (a *ESCLAdapter) CheckADFStatus() (bool, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if status.HasJam {
+	if status.HasCoverOpen {
+		// Cover open from scan_status bit 5 (reliable in idle context)
+		if a.lastScanErr == nil || a.lastScanErr.Kind != vens.ScanErrCoverOpen {
+			slog.Warn("ADF cover open detected from ADF status")
+		}
+		a.lastScanErr = &vens.ScanError{Kind: vens.ScanErrCoverOpen, Msg: "ADF cover open"}
+	} else if status.HasJam {
 		// Paper jam from scan_status bit 15 (reliable in idle context)
 		if a.lastScanErr == nil || a.lastScanErr.Kind != vens.ScanErrPaperJam {
 			slog.Warn("paper jam detected from ADF status")
@@ -263,7 +269,7 @@ func (a *ESCLAdapter) ADFState() escl.ADFState {
 		case vens.ScanErrPaperJam:
 			return escl.ScannerAdfJam
 		case vens.ScanErrCoverOpen:
-			return escl.ScannerAdfHatchOpen
+			return escl.ScannerAdfCoverOpen
 		case vens.ScanErrMultiFeed:
 			return escl.ScannerAdfMultipickDetected
 		default:

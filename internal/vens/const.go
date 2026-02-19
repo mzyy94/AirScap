@@ -51,8 +51,9 @@ const (
 
 // ADF status bitmasks applied to the scan status uint32 at response offset 40.
 const (
-	ADFPaperMask uint32 = 0x0080 // Bit 7: set = no paper; clear = paper present
-	ADFJamMask   uint32 = 0x8000 // Bit 15: paper jam (valid only in idle/ADF status context)
+	ADFCoverOpenMask uint32 = 0x0020 // Bit 5: ADF cover open
+	ADFPaperMask     uint32 = 0x0080 // Bit 7: set = no paper; clear = paper present
+	ADFJamMask       uint32 = 0x8000 // Bit 15: paper jam (valid only in idle/ADF status context)
 )
 
 // SCSI opcodes (CDB byte 0).
