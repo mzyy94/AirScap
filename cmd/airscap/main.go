@@ -101,7 +101,7 @@ func main() {
 	}
 
 	// Create eSCL adapter
-	adapter := scanner.NewESCLAdapter(sc)
+	adapter := scanner.NewESCLAdapter(sc, listenPort)
 
 	// Initialize settings store
 	var settingsStore *config.Store
@@ -215,6 +215,7 @@ func main() {
 	}
 
 	// Start mDNS advertisement
+	adminURL := fmt.Sprintf("http://%s:%d/ui/", vens.GetLocalIP(scannerIP), listenPort)
 	mdnsServer, err := zeroconf.Register(
 		deviceName,
 		"_uscan._tcp",
@@ -223,6 +224,7 @@ func main() {
 		[]string{
 			"txtvers=1",
 			"ty=" + deviceName,
+			"adminurl=" + adminURL,
 			"pdl=application/pdf,image/jpeg",
 			"cs=color,grayscale,binary",
 			"is=adf",
@@ -240,7 +242,7 @@ func main() {
 
 	// Start HTTP server
 	go func() {
-		localIP := vens.GetLocalIP()
+		localIP := vens.GetLocalIP(sc.Host())
 		hostPort := net.JoinHostPort(localIP, strconv.Itoa(listenPort))
 		slog.Info("eSCL server starting", "addr", addr, "escl", fmt.Sprintf("http://%s/eSCL", hostPort), "ui", fmt.Sprintf("http://%s/ui/", hostPort))
 		if err := httpServer.ListenAndServe(); err != http.ErrServerClosed {

@@ -105,7 +105,7 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Formats:     caps.DocumentFormats,
 	}
 
-	localIP := vens.GetLocalIP()
+	localIP := vens.GetLocalIP(h.sc.Host())
 	resp.ESCLUrl = fmt.Sprintf("http://%s:%d/eSCL", localIP, h.listenPort)
 
 	w.Header().Set("Content-Type", "application/json")

@@ -98,7 +98,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 
 	// Step 3: Configure session
 	slog.Debug("configuring session...")
-	localIP := vens.GetLocalIP()
+	localIP := vens.GetLocalIP(s.host)
 	accepted, err := s.control.Configure(s.token, localIP, vens.ClientNotifyPort, s.identity)
 	if err != nil {
 		hb.Stop()

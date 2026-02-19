@@ -17,9 +17,16 @@ func NewToken() [8]byte {
 	return token
 }
 
-// GetLocalIP returns the local IP used for LAN communication.
-func GetLocalIP() string {
-	conn, err := net.Dial("udp4", "192.168.0.1:80")
+// GetLocalIP returns the local IP used to reach the given target.
+// It dials a UDP socket to the target to let the OS routing table
+// pick the correct outbound interface. If targetIP is empty,
+// the link-local all-hosts multicast address (224.0.0.1) is used
+// to determine the default LAN interface without any external dependency.
+func GetLocalIP(targetIP string) string {
+	if targetIP == "" {
+		targetIP = "224.0.0.1"
+	}
+	conn, err := net.Dial("udp4", net.JoinHostPort(targetIP, "80"))
 	if err != nil {
 		return "0.0.0.0"
 	}
@@ -43,7 +50,7 @@ func FindScanner(ctx context.Context, opts DiscoveryOptions) (*DeviceInfo, error
 	ctx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()
 
-	localIP := GetLocalIP()
+	localIP := GetLocalIP(opts.ScannerIP)
 
 	// Bind to client discovery port
 	listenAddr := &net.UDPAddr{Port: ClientDiscoveryPort}

@@ -3,6 +3,7 @@ package scanner
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 
@@ -16,14 +17,15 @@ import (
 
 // ESCLAdapter implements abstract.Scanner for ScanSnap hardware.
 type ESCLAdapter struct {
-	scanner  *Scanner
-	caps     *abstract.ScannerCapabilities
-	adfEmpty bool // true after a scan session completes (ADF likely exhausted)
+	scanner    *Scanner
+	listenPort int
+	caps       *abstract.ScannerCapabilities
+	adfEmpty   bool // true after a scan session completes (ADF likely exhausted)
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
-func NewESCLAdapter(s *Scanner) *ESCLAdapter {
-	a := &ESCLAdapter{scanner: s}
+func NewESCLAdapter(s *Scanner, listenPort int) *ESCLAdapter {
+	a := &ESCLAdapter{scanner: s, listenPort: listenPort}
 	a.caps = a.buildCapabilities()
 	return a
 }
@@ -84,6 +86,7 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		MakeAndModel:    name,
 		Manufacturer:    manufacturer,
 		SerialNumber:    serial,
+		AdminURI:        fmt.Sprintf("http://%s:%d/ui/", vens.GetLocalIP(a.scanner.Host()), a.listenPort),
 		DocumentFormats: []string{"image/jpeg", "image/tiff", "application/pdf"},
 		ADFCapacity:     50,
 		ADFSimplex:      adfCaps,

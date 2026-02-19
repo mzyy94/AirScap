@@ -20,7 +20,7 @@ func StartHeartbeat(ctx context.Context, scannerIP string, token [8]byte, interv
 		interval = 500 * time.Millisecond
 	}
 
-	localIP := GetLocalIP()
+	localIP := GetLocalIP(scannerIP)
 	packet := MarshalDiscoveryVENS(localIP, token, ClientDiscoveryPort, true)
 	addr := &net.UDPAddr{IP: net.ParseIP(scannerIP), Port: DiscoveryPort}
 
