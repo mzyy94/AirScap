@@ -122,18 +122,25 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	)
 
 	pages, err := a.scanner.Scan(cfg, nil)
-	if err != nil {
-		// Mark ADF as empty on scan error (likely no paper)
-		a.adfEmpty = true
-		return nil, err
-	}
-	// Scan session completed — ADF is likely exhausted
 	a.adfEmpty = true
 
-	// Collect image data from pages
-	images := make([][]byte, len(pages))
-	for i, p := range pages {
-		images[i] = p.JPEG
+	// Collect non-empty image data from pages (some may exist even after errors)
+	var images [][]byte
+	for _, p := range pages {
+		if len(p.JPEG) > 0 {
+			images = append(images, p.JPEG)
+		}
+	}
+
+	if len(images) == 0 {
+		if err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("no pages scanned")
+	}
+	if err != nil {
+		slog.Warn("scan completed with error, returning partial results",
+			"err", err, "pages", len(images))
 	}
 
 	res := req.Resolution

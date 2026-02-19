@@ -11,9 +11,21 @@ import (
 	"time"
 )
 
+// ScanErrorKind classifies scanner errors.
+type ScanErrorKind int
+
+const (
+	ScanErrGeneric   ScanErrorKind = iota // Unknown/generic scanner error
+	ScanErrNoPaper                        // No paper in ADF
+	ScanErrPaperJam                       // Paper jam
+	ScanErrMultiFeed                      // Multi-feed (double feed) detected
+	ScanErrCoverOpen                      // ADF cover open
+)
+
 // ScanError indicates a scanner-level error (no paper, hardware failure, etc.).
 type ScanError struct {
-	Msg string
+	Kind ScanErrorKind
+	Msg  string
 }
 
 func (e *ScanError) Error() string { return e.Msg }
@@ -222,7 +234,7 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 		slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
 		if !HasPaper(scanStatus) {
-			return nil, &ScanError{Msg: "no paper in ADF"}
+			return nil, &ScanError{Kind: ScanErrNoPaper, Msg: "no paper in ADF"}
 		}
 	}
 
@@ -285,6 +297,12 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 			}
 			slog.Debug("page metadata", "bytes", len(metaResp))
 
+			// Parse SCSI Sense Data from REQUEST SENSE response
+			if senseErr := parseSenseError(metaResp); senseErr != nil {
+				slog.Warn("scanner error in sense data", "err", senseErr, "kind", senseErr.Kind, "pages", len(pages))
+				return pages, senseErr
+			}
+
 			transferSheet++
 		}
 
@@ -301,6 +319,17 @@ func (d *DataChannel) RunScan(cfg ScanConfig, onPage func(Page)) ([]Page, error)
 		if len(statusResp) >= StatusRespScanStatusOffset+4 {
 			scanStatus := binary.BigEndian.Uint32(statusResp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 			slog.Info("scan status", "status", fmt.Sprintf("0x%08X", scanStatus))
+		}
+
+		// Check for scanner error (multi-feed, etc.) at offset 44
+		if len(statusResp) >= StatusRespErrorOffset+4 {
+			errorField := binary.BigEndian.Uint32(statusResp[StatusRespErrorOffset : StatusRespErrorOffset+4])
+			if errorCode := errorField & 0xFFFF; errorCode != 0 {
+				kind := ScanErrGeneric
+				msg := fmt.Sprintf("scanner error 0x%04X", errorCode)
+				slog.Warn(msg, "errorCode", fmt.Sprintf("0x%04X", errorCode), "pages", len(pages))
+				return pages, &ScanError{Kind: kind, Msg: msg}
+			}
 		}
 
 		// Wait for next sheet
@@ -391,6 +420,42 @@ func (d *DataChannel) transferPageChunks(conn net.Conn, sheet int, backSide bool
 
 	slog.Debug("transfer complete", "sheet", sheet, "bytes", len(jpegBuf), "chunks", len(jpegBuf)/int(PageTransferLen)+1)
 	return jpegBuf, nil
+}
+
+// parseSenseError extracts error information from a REQUEST SENSE VENS response.
+// The 18-byte SCSI Sense Data starts at offset 40. Returns nil if no error.
+func parseSenseError(resp []byte) *ScanError {
+	if len(resp) < SenseDataOffset+14 {
+		return nil
+	}
+	senseKey := resp[SenseDataOffset+2] & 0x0F
+	asc := resp[SenseDataOffset+12]
+	ascq := resp[SenseDataOffset+13]
+
+	slog.Debug("sense data", "senseKey", fmt.Sprintf("0x%02X", senseKey),
+		"asc", fmt.Sprintf("0x%02X", asc), "ascq", fmt.Sprintf("0x%02X", ascq))
+
+	switch senseKey {
+	case SenseKeyNoSense:
+		return nil
+	case SenseKeyNotReady:
+		return &ScanError{Kind: ScanErrGeneric, Msg: "scanner not ready"}
+	case SenseKeyMediumError:
+		if asc == VendorASC {
+			switch ascq {
+			case ASCQPaperJam:
+				return &ScanError{Kind: ScanErrPaperJam, Msg: "paper jam"}
+			case ASCQCoverOpen:
+				return &ScanError{Kind: ScanErrCoverOpen, Msg: "ADF cover open"}
+			case ASCQMultiFeed:
+				return &ScanError{Kind: ScanErrMultiFeed, Msg: "multi-feed detected"}
+			case ASCQScanComplete:
+				return nil // Not an error — scan complete signal
+			}
+		}
+		return &ScanError{Kind: ScanErrGeneric, Msg: fmt.Sprintf("medium error (ASC=0x%02X, ASCQ=0x%02X)", asc, ascq)}
+	}
+	return &ScanError{Kind: ScanErrGeneric, Msg: fmt.Sprintf("unknown error (Key=0x%02X, ASC=0x%02X, ASCQ=0x%02X)", senseKey, asc, ascq)}
 }
 
 // CheckADFStatus queries the scanner ADF status and returns whether paper is present.

@@ -67,5 +67,27 @@ const PageTransferLen uint32 = 0x040000 // 256KB per chunk
 // Response field offsets.
 const (
 	StatusRespScanStatusOffset = 40 // uint32 at resp[40:44]
+	StatusRespErrorOffset      = 44 // uint32 at resp[44:48], error code in lower 16 bits
 	WaitRespStatusOffset       = 12 // uint32 at resp[12:16]
+)
+
+// SCSI Sense Data layout within REQUEST SENSE (opcode 0x03) VENS responses.
+// The 18-byte sense data starts at VENS response offset 40.
+const SenseDataOffset = 40
+
+// SCSI Sense Keys (sense[2] & 0x0F).
+const (
+	SenseKeyNoSense     byte = 0x00
+	SenseKeyNotReady    byte = 0x02
+	SenseKeyMediumError byte = 0x03
+)
+
+// Vendor-specific ASC/ASCQ for ScanSnap (ASC=0x80).
+// These appear in REQUEST SENSE responses at sense[12] and sense[13].
+const (
+	VendorASC        byte = 0x80 // Vendor-specific Additional Sense Code
+	ASCQPaperJam     byte = 0x01 // Paper Jam Detected
+	ASCQCoverOpen    byte = 0x02 // ADF Cover Open
+	ASCQScanComplete byte = 0x03 // No more pages (not an error)
+	ASCQMultiFeed    byte = 0x07 // Multi Feed Detected
 )
