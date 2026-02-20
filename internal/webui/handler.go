@@ -2,11 +2,13 @@ package webui
 
 import (
 	"embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/mzyy94/airscap/internal/config"
@@ -24,17 +26,19 @@ type handler struct {
 	settings   *config.Store
 	scanStatus *scanner.ScanJobStatus // nil when button listener is disabled
 	version    string
+	scanMu     *sync.Mutex // shared with button listener for scan exclusion
 }
 
 // NewHandler creates an HTTP handler for the Web UI.
-func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string) http.Handler {
-	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version}
+func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string, scanMu *sync.Mutex) http.Handler {
+	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version, scanMu: scanMu}
 	mux := http.NewServeMux()
 	staticContent, _ := fs.Sub(staticFS, "static")
 	mux.HandleFunc("GET /api/status", h.handleStatus)
 	mux.HandleFunc("GET /api/settings", h.handleGetSettings)
 	mux.HandleFunc("PUT /api/settings", h.handlePutSettings)
 	mux.HandleFunc("GET /api/scan/status", h.handleScanStatus)
+	mux.HandleFunc("POST /api/scan/preview", h.handleScanPreview)
 	mux.Handle("GET /", http.FileServer(http.FS(staticContent)))
 	return mux
 }
@@ -155,3 +159,57 @@ func (h *handler) handleScanStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(h.scanStatus.Snapshot())
 }
 
+// --- Scan Preview API ---
+
+func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
+	if !h.scanMu.TryLock() {
+		writeJSONError(w, http.StatusConflict, "scan_in_progress")
+		return
+	}
+	defer h.scanMu.Unlock()
+
+	if !h.sc.Online() {
+		writeJSONError(w, http.StatusServiceUnavailable, "scanner_offline")
+		return
+	}
+
+	s := h.settings.Get()
+	cfg := scanner.SettingsToScanConfig(s)
+
+	slog.Info("scan preview starting", "colorMode", cfg.ColorMode, "quality", cfg.Quality, "duplex", cfg.Duplex)
+	pages, err := h.sc.Scan(cfg, nil)
+	if err != nil {
+		slog.Error("scan preview failed", "err", err)
+		writeJSONError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if len(pages) == 0 {
+		writeJSONError(w, http.StatusInternalServerError, "no pages scanned")
+		return
+	}
+
+	isBW := cfg.ColorMode == vens.ColorBW
+	mime := "image/jpeg"
+	if isBW {
+		mime = "image/tiff"
+	}
+
+	// Encode pages as data URLs directly in the response — no server-side storage
+	dataURLs := make([]string, len(pages))
+	for i, p := range pages {
+		dataURLs[i] = fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(p.JPEG))
+	}
+
+	slog.Info("scan preview complete", "pages", len(pages), "format", mime)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"pages": dataURLs,
+	})
+}
+
+func writeJSONError(w http.ResponseWriter, status int, msg string) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(map[string]string{"error": msg})
+}

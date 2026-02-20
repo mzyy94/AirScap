@@ -231,7 +231,7 @@ func main() {
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
 	// Web UI for status and settings
-	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version)))
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version, &scanMu)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 

@@ -69,4 +69,10 @@ const MESSAGES = {
   modeColor:        { en: 'Color',       ja: 'カラー' },
   modeGrayscale:    { en: 'Grayscale',   ja: 'グレースケール' },
   modeBW:           { en: 'B&W',         ja: '白黒' },
+
+  // Browser scan
+  scanNow:          { en: 'Scan & Preview',                 ja: 'スキャンしてプレビュー' },
+  scanResult:       { en: 'Scan Result',                    ja: 'スキャン結果' },
+  downloadPage:     { en: 'Download Page',                  ja: 'ページをダウンロード' },
+  close:            { en: 'Close',                          ja: '閉じる' },
 };
