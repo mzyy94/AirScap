@@ -61,7 +61,7 @@ type ScanConfig struct {
 	Duplex             bool
 	BleedThrough       bool
 	PaperSize          PaperSize
-	BWDensity          int  // 0-10, only for BW mode
+	BWDensity          int  // -5 to +5, only for BW mode (wire value = 6 + density)
 	MultiFeed          bool
 	BlankPageRemoval   bool
 }

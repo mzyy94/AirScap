@@ -10,8 +10,12 @@
   <style>
     [x-cloak] { display: none !important; }
     .info-grid { grid-template-columns: 8rem 1fr !important; }
-    .info-grid dt { color: #7a7a7a; }
+    .info-grid dt { color: var(--bulma-text-50); }
     .info-grid dd { font-weight: 500; word-break: break-all; }
+    input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 6px; border-radius: 3px; background: var(--bulma-background); outline: none; margin: 10px 0; }
+    input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--bulma-primary); cursor: pointer; border: 2px solid var(--bulma-border); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+    input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--bulma-primary); cursor: pointer; border: 2px solid var(--bulma-border); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+    .range-labels { display: flex; justify-content: space-between; font-size: .7rem; color: var(--bulma-text-50); margin-top: -4px; }
   </style>
 </head>
 <body x-data="app()" x-init="init()">
@@ -170,6 +174,12 @@
                 </select>
               </div>
             </div>
+          </div>
+
+          <div class="field" x-show="scanConfig.colorMode === 'bw'">
+            <label class="label is-small"><span x-text="t('bwDensity')"></span> <span class="has-text-weight-normal has-text-grey" x-text="(scanConfig.bwDensity > 0 ? '+' : '') + scanConfig.bwDensity"></span></label>
+            <input type="range" min="-5" max="5" step="1" x-model.number="scanConfig.bwDensity" @change="debounceSaveSettings()">
+            <div class="range-labels"><span>-5</span><span>0</span><span>+5</span></div>
           </div>
 
           <div class="field">
@@ -386,7 +396,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         settingsReady: false,
         settingsSaved: false,
@@ -431,6 +441,7 @@
               format: s.format || 'application/pdf',
               blankPageRemoval: s.blankPageRemoval ?? true,
               bleedThrough: s.bleedThrough || false,
+              bwDensity: s.bwDensity ?? 0,
               saveType: s.saveType || 'none',
               savePath: s.savePath || '',
               ftpHost: s.ftpHost || '',
@@ -480,6 +491,7 @@
               format: this.scanConfig.format,
               blankPageRemoval: this.scanConfig.blankPageRemoval,
               bleedThrough: this.scanConfig.bleedThrough,
+              bwDensity: Number(this.scanConfig.bwDensity),
               saveType: this.scanConfig.saveType,
               savePath: this.scanConfig.savePath,
               ftpHost: this.scanConfig.ftpHost,

@@ -580,7 +580,7 @@ Front and back scan settings are stored in identical structures (front: +31~, ba
 | +50 | 1 | Constant | `0x04` |
 | +54 | 3 | Constant | `0x010101` |
 | +57 | 1 | BW Flag | `0x01`=B&W, `0x00`=other |
-| +60 | 1 | BW Density | density_value + 6 (range: 6–16, maps to 0–10) |
+| +60 | 1 | BW Density | `6 + density` (density: -5 to +5, wire value: 1–11, 0=normal) |
 
 Back side parameters (+63~) use the same structure as front.
 

@@ -41,6 +41,7 @@ const MESSAGES = {
   doubleSided:      { en: 'Double-sided',            ja: '両面スキャン' },
   blankPageRemoval: { en: 'Blank page removal',      ja: '白紙ページスキップ' },
   bleedThrough:     { en: 'Bleed-through reduction', ja: '裏写り軽減' },
+  bwDensity:        { en: 'B&W Density',             ja: '白黒濃度' },
 
   // Save destination
   disabled:         { en: 'Disabled',       ja: '保存しない' },

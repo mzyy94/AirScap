@@ -103,6 +103,7 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 		cfg.BlankPageRemoval = *s.BlankPageRemoval
 	}
 	cfg.BleedThrough = s.BleedThrough
+	cfg.BWDensity = s.BWDensity
 	return cfg
 }
 

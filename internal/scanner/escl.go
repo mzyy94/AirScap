@@ -101,6 +101,7 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		SerialNumber:    serial,
 		AdminURI:        fmt.Sprintf("http://%s:%d/ui/", vens.GetLocalIP(a.scanner.Host()), a.listenPort),
 		DocumentFormats: []string{"image/jpeg", "image/tiff", "application/pdf"},
+		ThresholdRange:  abstract.Range{Min: -5, Max: 5, Normal: 0, Step: 1},
 		ADFCapacity:     50,
 		ADFSimplex:      adfCaps,
 		ADFDuplex:       adfCaps,
@@ -340,6 +341,11 @@ func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
 
 	// ADF mode → Duplex
 	cfg.Duplex = req.ADFMode == abstract.ADFModeDuplex
+
+	// Threshold → BW Density (B&W mode only, -5 to +5)
+	if req.Threshold != nil {
+		cfg.BWDensity = *req.Threshold
+	}
 
 	return cfg
 }
