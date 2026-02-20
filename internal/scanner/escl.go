@@ -131,6 +131,9 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		"adfMode", req.ADFMode,
 		"duplex", cfg.Duplex,
 		"blankPageRemoval", cfg.BlankPageRemoval,
+		"bwDensity", cfg.BWDensity,
+		"paperWidth", cfg.PaperWidth,
+		"paperHeight", cfg.PaperHeight,
 	)
 
 	a.mu.Lock()
@@ -347,7 +350,19 @@ func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
 		cfg.BWDensity = *req.Threshold
 	}
 
+	// Region → Paper size (1/100 mm → 1/1200 inch)
+	if !req.Region.IsZero() {
+		cfg.PaperWidth = dimToInch1200(req.Region.Width)
+		cfg.PaperHeight = dimToInch1200(req.Region.Height)
+	}
+
 	return cfg
+}
+
+// dimToInch1200 converts abstract.Dimension (1/100 mm) to 1/1200 inch.
+func dimToInch1200(d abstract.Dimension) uint16 {
+	// 1 inch = 25.4 mm = 2540 (1/100 mm)
+	return uint16(int(d) * 1200 / 2540)
 }
 
 // --------------------------------------------------------------------------

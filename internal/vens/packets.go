@@ -528,12 +528,19 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	isGray := cfg.ColorMode == ColorGray
 	isAutoColor := cfg.ColorMode == ColorAuto
 	isAutoQuality := cfg.Quality == QualityAuto
+	hasPaperOverride := cfg.PaperWidth > 0 || cfg.PaperHeight > 0
 	isFullAuto := isAutoColor && isAutoQuality
 
 	dpi := QualityDPI[cfg.Quality]
 	dim := PaperDimensions[cfg.PaperSize]
 	if dim.Width == 0 && dim.Height == 0 {
 		dim = PaperDimensions[PaperAuto]
+	}
+	if cfg.PaperWidth > 0 {
+		dim.Width = cfg.PaperWidth
+	}
+	if cfg.PaperHeight > 0 {
+		dim.Height = cfg.PaperHeight
 	}
 
 	configSize := 0x50 // 80 bytes
@@ -565,10 +572,12 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	} else {
 		p[c+1] = 0x01
 	}
-	// +2, +3, +5: always 0x01
-	p[c+2] = 0x01
-	p[c+3] = 0x01
-	p[c+5] = 0x01
+	// +2, +3, +5: paper size auto-detect (0x01=auto, 0x00=fixed)
+	if !hasPaperOverride {
+		p[c+2] = 0x01
+		p[c+3] = 0x01
+		p[c+5] = 0x01
+	}
 	// +4: multi-feed detection
 	if cfg.MultiFeed {
 		p[c+4] = 0xD0
