@@ -1,0 +1,59 @@
+name: Release .deb packages
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goarch: amd64
+            nfpm_arch: amd64
+          - goarch: arm64
+            nfpm_arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.26.0"
+
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libjpeg-dev libpng-dev
+
+      - name: Install nfpm
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        env:
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
+        run: |
+          mkdir -p dist/build
+          go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" -o dist/build/airscap ./cmd/airscap/
+
+      - name: Build .deb package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NFPM_ARCH: ${{ matrix.nfpm_arch }}
+        run: nfpm package --packager deb --target ./
+
+      - name: Upload .deb to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cp airscap_*.deb "airscap_${{ matrix.nfpm_arch }}.deb"
+          gh release upload "$GITHUB_REF_NAME" ./*.deb

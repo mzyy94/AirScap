@@ -74,7 +74,7 @@ Download the `.deb` package from the [Releases](https://github.com/mzyy94/airsca
 curl -LO https://github.com/mzyy94/airscap/releases/latest/download/airscap_amd64.deb
 
 # Install
-sudo dpkg -i airscap_amd64.deb
+sudo apt install airscap_amd64.deb
 
 # Edit configuration
 sudo vi /etc/airscap/env

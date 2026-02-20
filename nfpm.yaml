@@ -1,0 +1,35 @@
+name: airscap
+arch: "${NFPM_ARCH}"
+version: "${VERSION}"
+maintainer: mzyy94 <https://github.com/mzyy94>
+description: ScanSnap iX500 Wi-Fi protocol bridge exposing eSCL (AirScan) server
+homepage: https://github.com/mzyy94/airscap
+platform: linux
+
+depends:
+  - libjpeg62-turbo
+  - libpng16-16t64
+
+contents:
+  - src: ./dist/build/airscap
+    dst: /usr/local/bin/airscap
+    file_info:
+      mode: 0755
+
+  - src: ./dist/airscap.service
+    dst: /etc/systemd/system/airscap.service
+    type: config|noreplace
+
+  - src: ./dist/env.example
+    dst: /etc/airscap/env
+    type: config|noreplace
+
+  - dst: /etc/airscap
+    type: dir
+    file_info:
+      mode: 0755
+
+scripts:
+  postinstall: ./dist/postinst.sh
+  preremove: ./dist/prerm.sh
+  postremove: ./dist/postrm.sh

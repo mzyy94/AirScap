@@ -9,6 +9,7 @@ ExecStart=/usr/local/bin/airscap
 EnvironmentFile=/etc/airscap/env
 Restart=on-failure
 RestartSec=10
+StateDirectory=airscap
 
 # Hardening
 NoNewPrivileges=true

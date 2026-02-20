@@ -74,7 +74,7 @@ flowchart TB
 curl -LO https://github.com/mzyy94/airscap/releases/latest/download/airscap_amd64.deb
 
 # インストール
-sudo dpkg -i airscap_amd64.deb
+sudo apt install airscap_amd64.deb
 
 # 設定を編集
 sudo vi /etc/airscap/env
