@@ -33,40 +33,35 @@ ScanSnap iX500 が Wi-Fi で使用する独自プロトコル **VENS** を Go �
 
 ## アーキテクチャ
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     ネットワーク                          │
-│                                                         │
-│   macOS イメージキャプチャ ─┐                              │
-│   Linux SANE ──────────────┤  eSCL (HTTP)               │
-│   Windows Scan ────────────┤                            │
-│   iOS / Android ───────────┤                            │
-│                            ▼                            │
-│              ┌──────────────────┐    VENS (UDP/TCP)     │
-│              │     AirScap      │◀──────────────────▶   │
-│              │                  │                   ▲   │
-│              │  eSCL Server     │              ScanSnap  │
-│              │  mDNS (_uscan)   │               iX500   │
-│              │  Web UI (:8080)  │                        │
-│              └──────────────────┘                        │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    A[macOS イメージキャプチャ] & B[Linux SANE] & C[Windows Scan]
+
+    subgraph airscap["AirScap"]
+        E[eSCL Server] --- F[mDNS _uscan] --- G["Web UI (:8080)"]
+    end
+
+    A & B & C -- "eSCL (HTTP)" --> airscap
+    airscap -- "VENS (UDP/TCP)" <--> S[ScanSnap iX500]
 ```
 
 ## 特徴
 
 - **ドライバ不要** &mdash; eSCL/AirScan 対応クライアントからそのまま利用可能
 - **ゼロコンフィグ** &mdash; ネットワーク上の ScanSnap を自動検出して接続
-- **多彩なスキャン** &mdash; カラー / グレースケール / 白黒、両面、PDF / JPEG / TIFF 出力に対応
+- **多彩なスキャン** &mdash; カラー / グレースケール / 白黒、両面、PDF / JPEG / TIFF 出力、白紙スキップ、裏写り軽減に対応
 - **物理ボタン対応** &mdash; スキャナ本体のボタンを押してスキャンジョブを実行。保存先はローカル / FTP / [Paperless-ngx] から選択
 - **Web UI** &mdash; ブラウザから設定変更やステータス確認が可能（英語 / 日本語）
 - **シングルバイナリ** &mdash; Go言語製、ランタイム依存なし。systemd サービスユニット同梱
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
-## 前提条件
+## 動作確認済み環境
 
-> **注意:** スキャナ本体の Wi-Fi 初期設定（アクセスポイントへの接続）は AirScap では行えません。
-> 事前に ScanSnap のセットアップツールまたは WPS ボタンを使用して、スキャナをネットワークに接続しておいてください。
+開発・テストは **ScanSnap iX500** と **macOS イメージキャプチャ**で行っています。同じ VENS プロトコルを使用する他の ScanSnap モデルでも動作する可能性がありますが、未検証です。他のクライアントソフトウェア（SANE、Windows Scan 等）との互換性も保証されていません。
+
+> [!TIP]
+> **Linux で USB 接続する場合:** USB 接続であれば SANE の標準ドライバ [`sane-epjitsu`](http://www.sane-project.org/man/sane-epjitsu.5.html) が ScanSnap iX500 をサポートしています。AirScap は Wi-Fi 経由でのスキャンを実現するためのものなので、USB 接続の場合は SANE ドライバをお使いください。
 
 ## インストール
 
@@ -140,13 +135,17 @@ AIRSCAP_PASSWORD=0700 AIRSCAP_SCANNER_IP=192.168.1.100 ./airscap
 4. mDNS 登録でクライアントから自動検出可能に
 5. `http://localhost:8080/ui/` で Web UI を提供
 
+> [!IMPORTANT]
+> スキャナ本体の Wi-Fi 初期設定（アクセスポイントへの接続）は AirScap では行えません。
+> 事前に ScanSnap のセットアップツールまたは WPS ボタンを使用して、スキャナをネットワークに接続しておいてください。
+
 ## Web UI
 
 `http://<host>:8080/ui/` で管理画面にアクセスできます。
 
-- **ステータス** &mdash; 接続状態、ADF の用紙有無
+- **ステータス** &mdash; 接続状態、ADF の用紙有無、エラー状態（紙詰まり・カバーオープン・重送検知）
 - **デバイス情報** &mdash; スキャナ名、シリアル番号、IP、ファームウェアリビジョン
-- **スキャン設定** &mdash; カラーモード、解像度、両面、出力形式
+- **スキャン設定** &mdash; カラーモード、解像度、両面、出力形式、白紙スキップ、裏写り軽減
 - **保存先** &mdash; ローカルフォルダ / FTP / Paperless-ngx のボタンスキャン設定
 - **eSCL エンドポイント** &mdash; eSCL クライアント手動設定用の URL
 - **多言語対応** &mdash; 英語 / 日本語切り替え

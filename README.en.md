@@ -33,40 +33,35 @@ It natively implements the proprietary **VENS** protocol used by ScanSnap iX500 
 
 ## Architecture
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     Your Network                        │
-│                                                         │
-│   macOS Image Capture ─┐                                │
-│   Linux SANE ──────────┤  eSCL (HTTP)                   │
-│   Windows Scan ────────┤                                │
-│   iOS / Android ───────┤                                │
-│                        ▼                                │
-│              ┌──────────────────┐    VENS (UDP/TCP)     │
-│              │     AirScap      │◀──────────────────▶   │
-│              │                  │                   ▲   │
-│              │  eSCL Server     │              ScanSnap  │
-│              │  mDNS (_uscan)   │               iX500   │
-│              │  Web UI (:8080)  │                        │
-│              └──────────────────┘                        │
-└─────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    A[macOS Image Capture] & B[Linux SANE] & C[Windows Scan]
+
+    subgraph airscap["AirScap"]
+        E[eSCL Server] --- F[mDNS _uscan] --- G["Web UI (:8080)"]
+    end
+
+    A & B & C -- "eSCL (HTTP)" --> airscap
+    airscap -- "VENS (UDP/TCP)" <--> S[ScanSnap iX500]
 ```
 
 ## Features
 
 - **Driver-free scanning** &mdash; Works with any eSCL/AirScan client out of the box
 - **Zero configuration** &mdash; Auto-discovers ScanSnap on the network and connects
-- **Versatile scanning** &mdash; Color / grayscale / B&W, duplex, PDF / JPEG / TIFF output
+- **Versatile scanning** &mdash; Color / grayscale / B&W, duplex, PDF / JPEG / TIFF output, blank page removal, bleed-through reduction
 - **Physical button support** &mdash; Press the scanner button to trigger a scan job. Save to local folder / FTP / [Paperless-ngx] from your choice
 - **Web UI** &mdash; Configure settings and monitor status from your browser (English / Japanese)
 - **Single binary** &mdash; Built in Go, zero runtime dependencies. Ships with a systemd service unit
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
-## Prerequisites
+## Tested Environment
 
-> **Note:** AirScap cannot perform the initial Wi-Fi setup of the scanner (connecting it to an access point).
-> Use the ScanSnap setup tool or the WPS button to connect the scanner to your network beforehand.
+Development and testing were done with a **ScanSnap iX500** and **macOS Image Capture**. Other ScanSnap models using the same VENS protocol may work but have not been tested. Compatibility with other client software (SANE, Windows Scan, etc.) is not guaranteed.
+
+> [!TIP]
+> **Using USB on Linux?** The standard SANE driver [`sane-epjitsu`](http://www.sane-project.org/man/sane-epjitsu.5.html) supports the ScanSnap iX500 over USB. AirScap is designed for Wi-Fi scanning only &mdash; if you have a USB connection, use the SANE driver instead.
 
 ## Installation
 
@@ -140,13 +135,17 @@ Once running, AirScap will:
 4. Register via mDNS so clients discover it automatically
 5. Serve a Web UI at `http://localhost:8080/ui/`
 
+> [!IMPORTANT]
+> AirScap cannot perform the initial Wi-Fi setup of the scanner (connecting it to an access point).
+> Use the ScanSnap setup tool or the WPS button to connect the scanner to your network beforehand.
+
 ## Web UI
 
 Access the built-in management interface at `http://<host>:8080/ui/`.
 
-- **Status** &mdash; Connection state, ADF paper presence
+- **Status** &mdash; Connection state, ADF paper presence, error states (paper jam, cover open, multi-feed)
 - **Device Info** &mdash; Scanner name, serial, IP, firmware revision
-- **Scan Settings** &mdash; Color mode, resolution, duplex, output format
+- **Scan Settings** &mdash; Color mode, resolution, duplex, output format, blank page removal, bleed-through reduction
 - **Save Destination** &mdash; Configure local folder / FTP / Paperless-ngx for button scans
 - **eSCL Endpoint** &mdash; URL for manual eSCL client configuration
 - **i18n** &mdash; English / Japanese toggle

@@ -425,6 +425,7 @@ The data channel command system is based on a **SCSI over TCP** architecture. Th
 
 | CDB Length | SCSI Opcode | Name | Description |
 |-----------|-------------|------|-------------|
+| 6 (`0x06`) | `0x03` | REQUEST SENSE | Get page metadata and error information (standard SCSI) |
 | 6 (`0x06`) | `0x12` | INQUIRY | Get device info (standard) and scan parameters (EVPD VPD page)* |
 | 6 (`0x06`) | `0xD4` | Write scan settings | Set color, quality, paper size, etc. (vendor-specific) |
 | 6 (`0x06`) | `0xD5` | Prepare scan | Used within scan session (vendor-specific) |
@@ -455,12 +456,16 @@ Commands with a 6-byte CDB length. Following the SCSI 6-byte CDB format, offset 
 
 | Opcode | Name | Description |
 |--------|------|-------------|
+| `0x03` | REQUEST SENSE | Get page metadata ([§5.3.5]) and error information ([§5.3.7]) |
 | `0x12` | INQUIRY | Get device info (EVPD=0, [§5.3.1]) and scan parameters (EVPD=1, VPD Page=0xF0, [§5.3.3]) |
 | `0xD4` | Write scan settings | Vendor-specific — Color, quality, paper size, etc. |
 | `0xD5` | Prepare scan | Vendor-specific — Used within scan session |
 | `0xD8` | Read scan settings | Vendor-specific — Read current settings |
 | `0xD6` | End scan | Vendor-specific — End scan session (resets scanner state) |
 | `0xE0` | Wait for scan start | Vendor-specific — Blocks until button press or trigger |
+
+[§5.3.5]: #535-get-page-metadata-request-sense-opcode0x03
+[§5.3.7]: #537-wait-for-scan-start-opcode0xe0
 
 [§5.3.1]: #531-get-device-info-inquiry-opcode0x12
 [§5.3.3]: #533-get-scan-parameters-inquiry-vpd-opcode0x12-evpd1
@@ -610,9 +615,9 @@ The third byte depends on paper size: `0x09` for postcard, `0x0B` for all others
 | FINE | 200 | `0x00C8` |
 | SUPERFINE | 300 | `0x012C` |
 
-#### 5.3.5 Get Page Metadata (INQUIRY variant: opcode=0x12, within scan session)
+#### 5.3.5 Get Page Metadata (REQUEST SENSE: opcode=0x03)
 
-Retrieves page details after a page transfer. Sent with different CDB parameters than the INQUIRY used for device info during session establishment.
+SCSI REQUEST SENSE command used for both retrieving page metadata after a page transfer and obtaining sense data when an error occurs.
 
 **Request (64 bytes):**
 
@@ -633,6 +638,27 @@ Retrieves page details after a page transfer. Sent with different CDB parameters
 | 42 | 2 | Page Dimensions | Resolution-related |
 | 44 | 4 | Total Image Size | Total size of the transferred page pair |
 | 48 | 10 | Reserved | Zero-filled |
+
+**Error detection usage:**
+
+When WAIT_FOR_SCAN ([§5.3.7]) returns status≠0, sending REQUEST SENSE on the same TCP connection retrieves SCSI sense data with error details. The sense data is located at response offset 40+.
+
+| Sense Data Offset | Field | Description |
+|-------------------|-------|-------------|
+| +2 (bits 3:0) | Sense Key (SK) | `0x03` = Medium Error |
+| +12 | ASC | `0x80` = Vendor-specific |
+| +13 | ASCQ | Error type (see below) |
+
+**Vendor-specific ASCQ (when ASC=0x80):**
+
+| ASCQ | Meaning |
+|------|---------|
+| `0x01` | Paper jam |
+| `0x02` | ADF cover open |
+| `0x03` | Scan complete (no more pages — not an error) |
+| `0x07` | Multi-feed detected |
+
+[§5.3.7]: #537-wait-for-scan-start-opcode0xe0
 
 #### 5.3.6 End Scan (opcode=0xD6)
 
@@ -669,9 +695,11 @@ Standard CDB Length 6 format. SCSI CDB opcode = `0xE0`.
 | Value | Meaning |
 |-------|---------|
 | `0x00000000` | Success — scan started / next page ready |
-| `0x00000002` | Done — no paper or scan complete |
+| `0x00000002` | Failure — no paper, scan complete, or error |
 
-When no paper is present, the client generates an error and aborts (no protocol-level error notification exists).
+**Error recovery:** When status≠0, sending REQUEST SENSE (opcode=0x03, [§5.3.5]) on the same TCP connection retrieves error details. The ASC/ASCQ in the sense data identifies the specific error type. ASCQ=0x03 (scan complete) is not an error but indicates all pages have been transferred.
+
+[§5.3.5]: #535-get-page-metadata-request-sense-opcode0x03
 
 ### 5.4 CDB Length 10 Command — Get Status (opcode=0xC2)
 
@@ -693,21 +721,29 @@ Paper presence is determined by the Scan Status field at offset 40. When bit `0x
 |--------|------|-------|-------------|
 | 0 | 4 | Length | `0x00000048` (72) |
 | 4 | 36 | Header | Zero-filled |
-| 40 | 4 | Scan Status | `0x00000000`=paper present (ready), `0x00000080`=no paper (not ready) |
-| 44 | 4 | Reserved | Fixed value (not reliable for paper detection) |
+| 40 | 4 | Scan Status | ADF state bitmask (see below) |
+| 44 | 4 | Error Code | Error code (lower 16 bits, 0=no error) |
 | 48 | 8 | Reserved | |
 | 56 | 4 | Device Flags | Device state flags |
 | 60 | 12 | Reserved | Zero-filled |
 
-**Paper Detection:**
+**Scan Status Bitmask:**
+
+| Bit | Mask | Meaning |
+|-----|------|---------|
+| Bit 5 | `0x0020` | ADF cover open |
+| Bit 7 | `0x0080` | No paper (set=no paper, clear=paper present) |
+| Bit 15 | `0x8000` | Paper jam |
+
+**State Detection:**
 
 ```
-has_paper = (scan_status & 0x80) == 0
+has_paper  = (scan_status & 0x0080) == 0
+cover_open = (scan_status & 0x0020) != 0
+paper_jam  = (scan_status & 0x8000) != 0
 ```
 
-When no paper is present, the client should abort before sending WAIT_FOR_SCAN.
-
-> **Note:** Offset 44 may return the same value (`0x00010000`) regardless of paper presence. Use Scan Status at offset 40 for paper detection.
+When cover open or paper jam is detected, abort the scan. When no paper is present, the client should abort before sending WAIT_FOR_SCAN.
 
 ### 5.5 CDB Length 8 Commands (CONFIG family)
 
@@ -986,9 +1022,8 @@ The session token is 8 bytes: 6 random bytes generated by the client followed by
 
 The following protocol details remain uncertain:
 
-1. **Error handling** — Protocol behavior during paper jams or multi-feed detection. No-paper condition is detected via WAIT_FOR_SCAN response status=2; other error notifications are undefined
-2. **Config Data constants** — The exact meaning of constant bytes at +9: `0xC8`, +12: `0x80`, +31: `0x30`, +50: `0x04`, +54~+56: `0x010101`
-3. **CONFIG Sub-config value** — The exact meaning of `0x05010000` is unknown
+1. **Config Data constants** — The exact meaning of constant bytes at +9: `0xC8`, +12: `0x80`, +31: `0x30`, +50: `0x04`, +54~+56: `0x010101`
+2. **CONFIG Sub-config value** — The exact meaning of `0x05010000` is unknown
 
 ---
 
