@@ -3,8 +3,10 @@ package vens
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"strings"
 	"time"
@@ -390,6 +392,48 @@ func MarshalGetScanSettings(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(12, 0xD8000000)
 	return marshalDataRequest(token, CmdGetSet, p)
+}
+
+// ParseScanParams parses a 184-byte INQUIRY VPD 0xF0 response into ScanParams.
+//
+// Response layout (after 40-byte VENS header):
+//
+//	[40]    Device type (0x06 = scanner)
+//	[41]    VPD page code (0xF0)
+//	[42-43] Page length
+//	[44]    Vendor data length
+//	[45-46] Max Resolution X (DPI)
+//	[47-48] Max Resolution Y (DPI)
+//	[49]    Color Modes (bitmask)
+//	[50-51] Default Resolution X (DPI)
+//	[52-53] Default Resolution Y (DPI)
+//	[54-55] Min Resolution X (DPI)
+//	[56-57] Min Resolution Y (DPI)
+//	[62-63] Max Width (1/600 inch)
+//	[66-67] Max Height (1/600 inch)
+func ParseScanParams(data []byte) (*ScanParams, error) {
+	if len(data) < 68 {
+		return nil, fmt.Errorf("scan params response too short: %d bytes", len(data))
+	}
+	slog.Debug("scan params raw",
+		"hex_40_80", hex.EncodeToString(data[40:min(80, len(data))]),
+	)
+	p := &ScanParams{
+		MaxResolutionX: int(binary.BigEndian.Uint16(data[45:47])),
+		MaxResolutionY: int(binary.BigEndian.Uint16(data[47:49])),
+		ColorModes:     data[49],
+		MinResolutionX: int(binary.BigEndian.Uint16(data[54:56])),
+		MinResolutionY: int(binary.BigEndian.Uint16(data[56:58])),
+		MaxWidth:       binary.BigEndian.Uint16(data[62:64]) * 2, // 1/600 → 1/1200 inch
+		MaxHeight:      binary.BigEndian.Uint16(data[66:68]) * 2, // 1/600 → 1/1200 inch
+	}
+	slog.Debug("scan params parsed",
+		"maxResX", p.MaxResolutionX, "maxResY", p.MaxResolutionY,
+		"minResX", p.MinResolutionX, "minResY", p.MinResolutionY,
+		"colorModes", fmt.Sprintf("0x%02X", p.ColorModes),
+		"maxWidth", fmt.Sprintf("0x%04X", p.MaxWidth), "maxHeight", fmt.Sprintf("0x%04X", p.MaxHeight),
+	)
+	return p, nil
 }
 
 // MarshalGetScanParams builds a SCSI INQUIRY (EVPD) request for scanner capabilities.

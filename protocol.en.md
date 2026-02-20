@@ -515,17 +515,19 @@ Commands with a 6-byte CDB length. Following the SCSI 6-byte CDB format, offset 
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
-| 40 | 2 | Command Echo | `0x0006` |
-| 42 | 2 | Param ID | `0xF002` |
-| 44 | 2 | Data Length | Parameter data length |
-| 46 | 2 | Max Resolution X | Max resolution X (DPI) |
-| 48 | 2 | Max Resolution Y | Max resolution Y (DPI) |
-| 50 | 1 | Color Modes | Supported color modes (bitmask) |
-| 51 | 2 | Default Res X | Default resolution X (DPI) |
-| 53 | 2 | Default Res Y | Default resolution Y (DPI) |
-| 55 | 2 | Min Resolution | Minimum resolution (DPI) |
-| 57 | 2 | Max Width | Maximum width |
-| 59+ | var | Additional Params | JPEG quality, paper sizes, etc. |
+| 40 | 1 | Device Type | `0x06` (scanner) |
+| 41 | 1 | Page Code | `0xF0` |
+| 42 | 2 | Page Length | VPD page length (actual data truncated by Allocation Length) |
+| 44 | 1 | Data Length | Vendor data length (`0x8B` = 139) |
+| 45 | 2 | Max Resolution X | Max resolution X (DPI) |
+| 47 | 2 | Max Resolution Y | Max resolution Y (DPI) |
+| 49 | 1 | Color Modes | Supported color modes (bitmask) |
+| 50 | 2 | Default Res X | Default resolution X (DPI) |
+| 52 | 2 | Default Res Y | Default resolution Y (DPI) |
+| 54 | 2 | Min Resolution X | Minimum resolution X (DPI) |
+| 56 | 2 | Min Resolution Y | Minimum resolution Y (DPI) |
+| 62 | 2 | Max Width | Maximum width (1/600 inch) |
+| 66 | 2 | Max Height | Maximum height (1/600 inch) |
 
 #### 5.3.4 Write Scan Settings (opcode=0xD4)
 

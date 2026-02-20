@@ -126,14 +126,18 @@ func (d *DataChannel) GetDeviceInfo() (*DataDeviceInfo, error) {
 }
 
 // GetScanParams queries scanner capabilities (cmd=0x06, sub=0x90).
-func (d *DataChannel) GetScanParams() ([]byte, error) {
+func (d *DataChannel) GetScanParams() (*ScanParams, error) {
 	slog.Debug("getting scan params...")
 	resp, err := d.request(MarshalGetScanParams(d.token))
 	if err != nil {
 		return nil, err
 	}
+	params, err := ParseScanParams(resp)
+	if err != nil {
+		return nil, err
+	}
 	slog.Debug("scan params OK", "bytes", len(resp))
-	return resp, nil
+	return params, nil
 }
 
 // GetScanSettings queries current scan settings (cmd=0x06, sub=0xD8).

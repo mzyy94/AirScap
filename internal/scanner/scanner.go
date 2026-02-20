@@ -27,6 +27,7 @@ type Scanner struct {
 	serial      string
 	deviceName        string // full device name with manufacturer from TCP GET_SET sub=0x12
 	firmwareRevision  string // firmware revision from device name suffix (e.g. "0M00")
+	scanParams        *vens.ScanParams // capabilities from INQUIRY VPD 0xF0
 
 	reconnCancel context.CancelFunc
 	reconnDone   chan struct{}
@@ -138,7 +139,8 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		slog.Warn("status check failed", "err", err)
 	}
 
-	if _, err := dataCh.GetScanParams(); err != nil {
+	scanParams, err := dataCh.GetScanParams()
+	if err != nil {
 		slog.Warn("get scan params failed", "err", err)
 	}
 
@@ -154,6 +156,7 @@ func (s *Scanner) Connect(ctx context.Context) error {
 		s.deviceName = devInfo.DeviceName
 		s.firmwareRevision = devInfo.FirmwareRevision
 	}
+	s.scanParams = scanParams
 	s.mu.Unlock()
 	slog.Info("connected to scanner", "host", s.host, "name", info.Name, "serial", info.Serial, "deviceName", s.deviceName)
 	return nil
@@ -333,6 +336,13 @@ func (s *Scanner) FirmwareRevision() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.firmwareRevision
+}
+
+// ScanParams returns the scanner capabilities from INQUIRY VPD 0xF0.
+func (s *Scanner) ScanParams() *vens.ScanParams {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.scanParams
 }
 
 // Manufacturer extracts the manufacturer from the device name

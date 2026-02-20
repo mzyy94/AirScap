@@ -70,6 +70,11 @@ const MESSAGES = {
   modeGrayscale:    { en: 'Grayscale',   ja: 'グレースケール' },
   modeBW:           { en: 'B&W',         ja: '白黒' },
 
+  // AirScan settings
+  airscanSettings:  { en: 'AirScan Settings',      ja: 'AirScan 設定' },
+  forcePaperAuto:   { en: 'Auto paper size detect', ja: '用紙サイズ自動検出' },
+  forcePaperAutoHelp: { en: 'Force auto paper size detection for AirScan clients (macOS Image Capture, etc.). Requires AirScap restart to take effect.', ja: 'AirScan クライアント (macOS Image Capture 等) で用紙サイズを自動検出に強制する。変更後は AirScap の再起動が必要です。' },
+
   // Browser scan
   scanNow:          { en: 'Scan & Preview',                 ja: 'スキャンしてプレビュー' },
   scanResult:       { en: 'Scan Result',                    ja: 'スキャン結果' },

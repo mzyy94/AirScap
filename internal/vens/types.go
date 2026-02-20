@@ -81,6 +81,17 @@ func DefaultScanConfig() ScanConfig {
 	}
 }
 
+// ScanParams holds scanner capabilities from INQUIRY VPD 0xF0 response.
+type ScanParams struct {
+	MaxResolutionX int    // DPI
+	MaxResolutionY int    // DPI
+	MinResolutionX int    // DPI
+	MinResolutionY int    // DPI
+	ColorModes     uint8  // raw bitmask
+	MaxWidth       uint16 // 1/1200 inch (converted from 1/600 on the wire)
+	MaxHeight      uint16 // 1/1200 inch (converted from 1/600 on the wire)
+}
+
 // DataDeviceInfo holds device identity from TCP GET_SET sub=0x12 response.
 type DataDeviceInfo struct {
 	DeviceName       string

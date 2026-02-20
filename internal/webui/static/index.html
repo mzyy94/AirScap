@@ -375,6 +375,30 @@
         </div>
       </div>
 
+      <!-- AirScan Settings -->
+      <div class="card mb-4" x-cloak x-show="settingsReady">
+        <header class="card-header">
+          <span class="card-header-icon">
+            <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg></span>
+          </span>
+          <p class="card-header-title" x-text="t('airscanSettings')"></p>
+          <span class="card-header-icon">
+            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
+            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7" x-text="t('saveFailed')"></span>
+          </span>
+        </header>
+        <div class="card-content">
+          <div class="field">
+            <label class="label is-small" x-text="t('forcePaperAuto')"></label>
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="scanConfig.forcePaperAuto ? 'is-primary is-selected' : ''" @click="scanConfig.forcePaperAuto = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.forcePaperAuto ? 'is-primary is-selected' : ''" @click="scanConfig.forcePaperAuto = false; debounceSaveSettings()">OFF</button>
+            </div>
+            <p class="help" x-text="t('forcePaperAutoHelp')"></p>
+          </div>
+        </div>
+      </div>
+
       <!-- eSCL Endpoint -->
       <div class="card mb-4" x-cloak x-show="status?.esclUrl">
         <header class="card-header">
@@ -446,7 +470,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '' },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', forcePaperAuto: false },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         scanPreview: { scanning: false, error: '', pages: [], showModal: false, currentPage: 0 },
         settingsReady: false,
@@ -500,6 +524,7 @@
               ftpPassword: s.ftpPassword || '',
               paperlessUrl: s.paperlessUrl || '',
               paperlessToken: s.paperlessToken || '',
+              forcePaperAuto: s.forcePaperAuto || false,
             };
             this.clampToCapabilities();
             this.settingsReady = true;
@@ -550,6 +575,7 @@
               ftpPassword: this.scanConfig.ftpPassword,
               paperlessUrl: this.scanConfig.paperlessUrl,
               paperlessToken: this.scanConfig.paperlessToken,
+              forcePaperAuto: this.scanConfig.forcePaperAuto,
             };
             const resp = await fetch('api/settings', {
               method: 'PUT',

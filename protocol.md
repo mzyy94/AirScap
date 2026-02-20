@@ -515,17 +515,19 @@ CDB長が 6 バイトのコマンド群。SCSI の 6 バイト CDB フォーマ�
 
 | オフセット | サイズ | フィールド | 説明 |
 |-----------|--------|-----------|------|
-| 40 | 2 | Command Echo | `0x0006` |
-| 42 | 2 | Param ID | `0xF002` |
-| 44 | 2 | Data Length | パラメータデータ長 |
-| 46 | 2 | Max Resolution X | 最大解像度 X（DPI） |
-| 48 | 2 | Max Resolution Y | 最大解像度 Y（DPI） |
-| 50 | 1 | Color Modes | 対応カラーモード（ビットマスク） |
-| 51 | 2 | Default Res X | デフォルト解像度 X（DPI） |
-| 53 | 2 | Default Res Y | デフォルト解像度 Y（DPI） |
-| 55 | 2 | Min Resolution | 最小解像度（DPI） |
-| 57 | 2 | Max Width | 最大幅 |
-| 59+ | 可変 | Additional Params | JPEG品質、用紙サイズ等 |
+| 40 | 1 | Device Type | `0x06`（スキャナー） |
+| 41 | 1 | Page Code | `0xF0` |
+| 42 | 2 | Page Length | VPD ページ長（実際のデータは Allocation Length で切り詰め） |
+| 44 | 1 | Data Length | ベンダーデータ長（`0x8B` = 139） |
+| 45 | 2 | Max Resolution X | 最大解像度 X（DPI） |
+| 47 | 2 | Max Resolution Y | 最大解像度 Y（DPI） |
+| 49 | 1 | Color Modes | 対応カラーモード（ビットマスク） |
+| 50 | 2 | Default Res X | デフォルト解像度 X（DPI） |
+| 52 | 2 | Default Res Y | デフォルト解像度 Y（DPI） |
+| 54 | 2 | Min Resolution X | 最小解像度 X（DPI） |
+| 56 | 2 | Min Resolution Y | 最小解像度 Y（DPI） |
+| 62 | 2 | Max Width | 最大幅（1/600インチ単位） |
+| 66 | 2 | Max Height | 最大高さ（1/600インチ単位） |
 
 #### 5.3.4 スキャン設定書き込み（opcode=0xD4）
 

@@ -24,6 +24,7 @@ type Settings struct {
 	FTPPassword      string `json:"ftpPassword"`
 	PaperlessURL     string `json:"paperlessUrl"`
 	PaperlessToken   string `json:"paperlessToken"`
+	ForcePaperAuto   bool   `json:"forcePaperAuto"` // AirScan: force paper auto-detect by constraining max area to A4
 }
 
 // DefaultSettings returns the default scan settings.

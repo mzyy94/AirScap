@@ -14,6 +14,7 @@ import (
 	"github.com/OpenPrinting/go-mfp/util/generic"
 	"github.com/OpenPrinting/go-mfp/util/uuid"
 
+	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/vens"
 )
 
@@ -22,6 +23,7 @@ type ESCLAdapter struct {
 	mu               sync.Mutex
 	scanner          *Scanner
 	listenPort       int
+	forcePaperAuto   bool              // set at init from config; requires restart to change
 	caps             *abstract.ScannerCapabilities
 	adfEmpty         bool              // true after a scan session completes (ADF likely exhausted)
 	blankPageRemoval bool              // controlled by eSCL BlankPageDetectionAndRemoval
@@ -30,8 +32,11 @@ type ESCLAdapter struct {
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
-func NewESCLAdapter(s *Scanner, listenPort int) *ESCLAdapter {
+func NewESCLAdapter(s *Scanner, listenPort int, settings *config.Store) *ESCLAdapter {
 	a := &ESCLAdapter{scanner: s, listenPort: listenPort, blankPageRemoval: true}
+	if settings != nil {
+		a.forcePaperAuto = settings.Get().ForcePaperAuto
+	}
 	a.caps = a.buildCapabilities()
 	return a
 }
@@ -44,10 +49,25 @@ func (a *ESCLAdapter) SetBlankPageRemoval(enabled bool) {
 }
 
 func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
-	resolutions := []abstract.Resolution{
-		{XResolution: 150, YResolution: 150},
-		{XResolution: 200, YResolution: 200},
-		{XResolution: 300, YResolution: 300},
+	params := a.scanner.ScanParams()
+
+	// Resolutions: filter known DPI values by scanner-reported range
+	maxRes := 300
+	minRes := 150
+	if params != nil && params.MaxResolutionX > 0 {
+		maxRes = params.MaxResolutionX
+	}
+	if params != nil && params.MinResolutionX > 0 {
+		minRes = params.MinResolutionX
+	}
+	var resolutions []abstract.Resolution
+	for _, dpi := range []int{150, 200, 300} {
+		if dpi >= minRes && dpi <= maxRes {
+			resolutions = append(resolutions, abstract.Resolution{XResolution: dpi, YResolution: dpi})
+		}
+	}
+	if len(resolutions) == 0 {
+		resolutions = []abstract.Resolution{{XResolution: 300, YResolution: 300}}
 	}
 
 	profile := abstract.SettingsProfile{
@@ -61,13 +81,39 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		Resolutions:      resolutions,
 	}
 
+	// Max dimensions from scanner params, with fallbacks
+	maxWidth := 216 * abstract.Millimeter
+	maxHeight := 360 * abstract.Millimeter
+	if params != nil && params.MaxWidth > 0 {
+		maxWidth = inch1200ToDim(params.MaxWidth)
+	}
+	if params != nil && params.MaxHeight > 0 {
+		maxHeight = inch1200ToDim(params.MaxHeight)
+	}
+
+	minWidth := 50 * abstract.Millimeter
+	minHeight := 50 * abstract.Millimeter
+	if a.forcePaperAuto {
+		// Constrain to A4 so eSCL clients always send A4 region (= auto paper detect).
+		// Min is 1mm less than Max to avoid go-mfp ceil(min) > floor(max) rounding.
+		minWidth = 209 * abstract.Millimeter
+		maxWidth = 210 * abstract.Millimeter
+		minHeight = 296 * abstract.Millimeter
+		maxHeight = 297 * abstract.Millimeter
+	}
+
+	maxOptRes := 300
+	if params != nil && params.MaxResolutionX > 0 {
+		maxOptRes = params.MaxResolutionX
+	}
+
 	adfCaps := &abstract.InputCapabilities{
-		MinWidth:              50 * abstract.Millimeter,
-		MaxWidth:              216 * abstract.Millimeter,
-		MinHeight:             50 * abstract.Millimeter,
-		MaxHeight:             360 * abstract.Millimeter,
-		MaxOpticalXResolution: 300,
-		MaxOpticalYResolution: 300,
+		MinWidth:              minWidth,
+		MaxWidth:              maxWidth,
+		MinHeight:             minHeight,
+		MaxHeight:             maxHeight,
+		MaxOpticalXResolution: maxOptRes,
+		MaxOpticalYResolution: maxOptRes,
 		Intents: generic.MakeBitset(
 			abstract.IntentDocument,
 			abstract.IntentPhoto,
@@ -120,7 +166,7 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		return nil, err
 	}
 
-	cfg := mapScanConfig(req)
+	cfg := mapScanConfig(req, a.forcePaperAuto)
 	a.mu.Lock()
 	cfg.BlankPageRemoval = a.blankPageRemoval
 	a.mu.Unlock()
@@ -314,7 +360,8 @@ func errorCodeToKind(code uint16) vens.ScanErrorKind {
 }
 
 // mapScanConfig converts an eSCL ScannerRequest to VENS ScanConfig.
-func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
+// When forcePaperAuto is true, paper size override is skipped (always auto-detect).
+func mapScanConfig(req abstract.ScannerRequest, forcePaperAuto bool) vens.ScanConfig {
 	cfg := vens.DefaultScanConfig()
 
 	// Color mode
@@ -351,9 +398,14 @@ func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
 	}
 
 	// Region → Paper size (1/100 mm → 1/1200 inch)
-	if !req.Region.IsZero() {
-		cfg.PaperWidth = dimToInch1200(req.Region.Width)
-		cfg.PaperHeight = dimToInch1200(req.Region.Height)
+	// When Region matches max scan area, treat as auto (don't override).
+	// When forcePaperAuto is enabled, always skip paper override (auto-detect).
+	if !forcePaperAuto {
+		maxRegion := req.Region.Width >= 216*abstract.Millimeter && req.Region.Height >= 360*abstract.Millimeter
+		if !req.Region.IsZero() && !maxRegion {
+			cfg.PaperWidth = dimToInch1200(req.Region.Width)
+			cfg.PaperHeight = dimToInch1200(req.Region.Height)
+		}
 	}
 
 	return cfg
@@ -363,6 +415,11 @@ func mapScanConfig(req abstract.ScannerRequest) vens.ScanConfig {
 func dimToInch1200(d abstract.Dimension) uint16 {
 	// 1 inch = 25.4 mm = 2540 (1/100 mm)
 	return uint16(int(d) * 1200 / 2540)
+}
+
+// inch1200ToDim converts 1/1200 inch to abstract.Dimension (1/100 mm).
+func inch1200ToDim(v uint16) abstract.Dimension {
+	return abstract.Dimension(int(v) * 2540 / 1200)
 }
 
 // --------------------------------------------------------------------------

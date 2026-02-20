@@ -100,9 +100,6 @@ func main() {
 		deviceName = "ScanSnap"
 	}
 
-	// Create eSCL adapter
-	adapter := scanner.NewESCLAdapter(sc, listenPort)
-
 	// Initialize settings store
 	var settingsStore *config.Store
 	if dataDir != "" {
@@ -117,6 +114,9 @@ func main() {
 		settingsStore = config.NewMemoryStore()
 		slog.Info("settings store initialized (memory-only, set AIRSCAP_DATA_DIR to persist)")
 	}
+
+	// Create eSCL adapter
+	adapter := scanner.NewESCLAdapter(sc, listenPort, settingsStore)
 
 	// Scan job status (shared with WebUI)
 	scanStatus := &scanner.ScanJobStatus{}
