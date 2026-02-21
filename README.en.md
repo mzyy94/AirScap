@@ -3,7 +3,7 @@
 <h3 align="center">AirScan bridge for legacy Wi-Fi ScanSnap scanners</h3>
 
 <p align="center">
-  <a href="https://github.com/mzyy94/airscap/actions/workflows/ci.yml"><img src="https://github.com/mzyy94/airscap/actions/workflows/ci.yml/badge.svg?branch=master" alt="CI"></a>
+  <a href="https://github.com/mzyy94/airscap/actions/workflows/test.yml"><img src="https://github.com/mzyy94/airscap/actions/workflows/test.yml/badge.svg?branch=master" alt="CI"></a>
   <a href="https://github.com/mzyy94/airscap/releases"><img src="https://img.shields.io/github/v/release/mzyy94/airscap" alt="Release"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/mzyy94/airscap" alt="License"></a>
 </p>
