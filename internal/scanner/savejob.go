@@ -104,6 +104,12 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	}
 	cfg.BleedThrough = s.BleedThrough
 	cfg.BWDensity = s.BWDensity
+	// Compression: 1(best quality)..5(most compressed) → VENS 0x0D..0x09
+	compression := s.Compression
+	if compression < 1 || compression > 5 {
+		compression = 3
+	}
+	cfg.CompressionArg = byte(0x0E - compression)
 
 	// Paper size for button scan
 	switch s.PaperSize {

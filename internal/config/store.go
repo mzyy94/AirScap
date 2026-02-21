@@ -17,8 +17,9 @@ type Settings struct {
 	Format           string `json:"format"`
 	BlankPageRemoval *bool  `json:"blankPageRemoval"` // nil = default (true)
 	BleedThrough     bool   `json:"bleedThrough"`
-	BWDensity        int    `json:"bwDensity"` // -5 to +5, only for B&W mode
-	SaveType         string `json:"saveType"`  // "none", "local", "ftp", "paperless"
+	BWDensity        int    `json:"bwDensity"`    // -5 to +5, only for B&W mode
+	Compression      int    `json:"compression"` // 1(best quality)..5(most compressed), default 3
+	SaveType         string `json:"saveType"`    // "none", "local", "ftp", "paperless"
 	SavePath         string `json:"savePath"` // directory path when SaveType="local"
 	FTPHost          string `json:"ftpHost"`
 	FTPUser          string `json:"ftpUser"`

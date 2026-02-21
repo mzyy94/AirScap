@@ -676,9 +676,12 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	p.putU16(c+36, uint16(dpi))
 
 	// +38-40: color encoding
-	colorEncTail := byte(0x0B)
-	if cfg.PaperSize == PaperPostcard {
-		colorEncTail = 0x09
+	colorEncTail := cfg.CompressionArg
+	if colorEncTail == 0 {
+		colorEncTail = 0x0B
+		if cfg.PaperSize == PaperPostcard {
+			colorEncTail = 0x09
+		}
 	}
 	if isGray {
 		p[c+38] = 0x02
@@ -721,7 +724,7 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 		p.putU16(bc+4, uint16(dpi))
 		p[bc+6] = 0x02
 		p[bc+7] = 0x82
-		p[bc+8] = 0x0B
+		p[bc+8] = colorEncTail
 		p.putU16(bc+12, dim.Width)
 		p.putU16(bc+16, dim.Height)
 		p[bc+18] = 0x04

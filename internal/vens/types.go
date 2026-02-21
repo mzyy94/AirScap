@@ -64,6 +64,7 @@ type ScanConfig struct {
 	PaperWidth         uint16 // override width in 1/1200 inch; 0 = use PaperSize
 	PaperHeight        uint16 // override height in 1/1200 inch; 0 = use PaperSize
 	BWDensity          int    // -5 to +5, only for BW mode (wire value = 6 + density)
+	CompressionArg     byte   // JPEG compression: 0x09 (most compressed) to 0x0D (best quality); 0 = auto
 	MultiFeed          bool
 	BlankPageRemoval   bool
 }

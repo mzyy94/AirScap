@@ -125,15 +125,16 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 	}
 
 	return &abstract.ScannerCapabilities{
-		UUID:            deviceUUID,
-		MakeAndModel:    name,
-		SerialNumber:    serial,
-		AdminURI:        fmt.Sprintf("http://%s:%d/ui/", vens.GetLocalIP(a.scanner.Host()), a.listenPort),
-		DocumentFormats: []string{"image/jpeg", "image/tiff", "application/pdf"},
-		ThresholdRange:  abstract.Range{Min: -5, Max: 5, Normal: 0, Step: 1},
-		ADFCapacity:     50,
-		ADFSimplex:      adfCaps,
-		ADFDuplex:       adfCaps,
+		UUID:             deviceUUID,
+		MakeAndModel:     name,
+		SerialNumber:     serial,
+		AdminURI:         fmt.Sprintf("http://%s:%d/ui/", vens.GetLocalIP(a.scanner.Host()), a.listenPort),
+		DocumentFormats:  []string{"image/jpeg", "image/tiff", "application/pdf"},
+		CompressionRange: abstract.Range{Min: 1, Max: 5, Normal: 3, Step: 1},
+		ThresholdRange:   abstract.Range{Min: -5, Max: 5, Normal: 0, Step: 1},
+		ADFCapacity:      50,
+		ADFSimplex:       adfCaps,
+		ADFDuplex:        adfCaps,
 	}
 }
 
@@ -174,6 +175,7 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		"bwDensity", cfg.BWDensity,
 		"paperWidth", cfg.PaperWidth,
 		"paperHeight", cfg.PaperHeight,
+		"compression", cfg.CompressionArg,
 	)
 
 	a.mu.Lock()
@@ -389,6 +391,15 @@ func mapScanConfig(req abstract.ScannerRequest, forcePaperAuto bool) vens.ScanCo
 	// Threshold → BW Density (B&W mode only, -5 to +5)
 	if req.Threshold != nil {
 		cfg.BWDensity = *req.Threshold
+	}
+
+	// Compression → JPEG quality (eSCL 1-5 → VENS 0x0D-0x09)
+	// eSCL: lower = better image; VENS: lower = more compression
+	if req.Compression != nil {
+		v := *req.Compression
+		if v >= 1 && v <= 5 {
+			cfg.CompressionArg = byte(0x0E - v)
+		}
 	}
 
 	// Region → Paper size (1/100 mm → 1/1200 inch)

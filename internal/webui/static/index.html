@@ -180,6 +180,12 @@
             <div class="range-labels"><span>-5</span><span>0</span><span>+5</span></div>
           </div>
 
+          <div class="field" x-show="scanConfig.colorMode !== 'bw'">
+            <label class="label is-small"><span x-text="t('compression')"></span> <span class="has-text-weight-normal has-text-grey" x-text="scanConfig.compression"></span></label>
+            <input type="range" min="1" max="5" step="1" x-model.number="scanConfig.compression" @change="debounceSaveSettings()">
+            <div class="range-labels"><span x-text="'1 ' + t('compBest')"></span><span x-text="'3 ' + t('compStandard')"></span><span x-text="'5 ' + t('compSmall')"></span></div>
+          </div>
+
           <div class="field">
             <label class="label is-small" x-text="t('resolution')"></label>
             <div class="control">
@@ -497,7 +503,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', airscanForcePaperAuto: false, airscanBleedThrough: false, airscanBwDensity: 0 },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, compression: 3, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', airscanForcePaperAuto: false, airscanBleedThrough: false, airscanBwDensity: 0 },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         scanPreview: { scanning: false, error: '', pages: [], showModal: false, currentPage: 0 },
         settingsReady: false,
@@ -544,6 +550,7 @@
               blankPageRemoval: s.blankPageRemoval ?? true,
               bleedThrough: s.bleedThrough || false,
               bwDensity: s.bwDensity ?? 0,
+              compression: s.compression || 3,
               saveType: s.saveType || 'none',
               savePath: s.savePath || '',
               ftpHost: s.ftpHost || '',
@@ -598,6 +605,7 @@
               blankPageRemoval: this.scanConfig.blankPageRemoval,
               bleedThrough: this.scanConfig.bleedThrough,
               bwDensity: Number(this.scanConfig.bwDensity),
+              compression: Number(this.scanConfig.compression),
               saveType: this.scanConfig.saveType,
               savePath: this.scanConfig.savePath,
               ftpHost: this.scanConfig.ftpHost,

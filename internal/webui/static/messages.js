@@ -41,6 +41,10 @@ const MESSAGES = {
   blankPageRemoval: { en: 'Blank page removal',      ja: '白紙ページスキップ' },
   bleedThrough:     { en: 'Bleed-through reduction', ja: '裏写り軽減' },
   bwDensity:        { en: 'B&W Density',             ja: '白黒濃度' },
+  compression:      { en: 'JPEG Quality',            ja: 'JPEG 画質' },
+  compBest:         { en: 'Best',                   ja: '高画質' },
+  compStandard:     { en: 'Standard',               ja: '標準' },
+  compSmall:        { en: 'Small',                  ja: '小サイズ' },
 
   // Save destination
   disabled:         { en: 'Disabled',       ja: '保存しない' },
