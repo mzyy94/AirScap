@@ -7,8 +7,8 @@ homepage: https://github.com/mzyy94/airscap
 platform: linux
 
 depends:
-  - libjpeg62-turbo
-  - libpng16-16t64
+  - libjpeg62-turbo | libjpeg-turbo8
+  - libpng16-16 | libpng16-16t64
 
 contents:
   - src: ./dist/build/airscap
