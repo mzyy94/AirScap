@@ -393,31 +393,6 @@ func TestBuildCapabilities_NilScanParams(t *testing.T) {
 	}
 }
 
-func TestBuildCapabilities_ForcePaperAuto(t *testing.T) {
-	params := &vens.ScanParams{
-		MaxResolutionX: 600,
-		MaxWidth:       0x28D0,
-		MaxHeight:      0xA1D0,
-	}
-	s := newTestScanner(params)
-	a := &ESCLAdapter{scanner: s, listenPort: 8080, forcePaperAuto: true}
-	caps := a.buildCapabilities()
-
-	// ForcePaperAuto constrains to A4
-	if caps.ADFSimplex.MaxWidth != 210*abstract.Millimeter {
-		t.Errorf("MaxWidth = %d, want %d (A4 210mm)", caps.ADFSimplex.MaxWidth, 210*abstract.Millimeter)
-	}
-	if caps.ADFSimplex.MaxHeight != 297*abstract.Millimeter {
-		t.Errorf("MaxHeight = %d, want %d (A4 297mm)", caps.ADFSimplex.MaxHeight, 297*abstract.Millimeter)
-	}
-	if caps.ADFSimplex.MinWidth != 209*abstract.Millimeter {
-		t.Errorf("MinWidth = %d, want %d (209mm)", caps.ADFSimplex.MinWidth, 209*abstract.Millimeter)
-	}
-	if caps.ADFSimplex.MinHeight != 296*abstract.Millimeter {
-		t.Errorf("MinHeight = %d, want %d (296mm)", caps.ADFSimplex.MinHeight, 296*abstract.Millimeter)
-	}
-}
-
 func TestBuildCapabilities_EmptyName(t *testing.T) {
 	s := newTestScanner(nil)
 	s.name = ""

@@ -23,7 +23,7 @@ type ESCLAdapter struct {
 	mu               sync.Mutex
 	scanner          *Scanner
 	listenPort       int
-	forcePaperAuto   bool              // set at init from config; requires restart to change
+	settings         *config.Store
 	caps             *abstract.ScannerCapabilities
 	adfEmpty         bool              // true after a scan session completes (ADF likely exhausted)
 	blankPageRemoval bool              // controlled by eSCL BlankPageDetectionAndRemoval
@@ -33,10 +33,7 @@ type ESCLAdapter struct {
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
 func NewESCLAdapter(s *Scanner, listenPort int, settings *config.Store) *ESCLAdapter {
-	a := &ESCLAdapter{scanner: s, listenPort: listenPort, blankPageRemoval: true}
-	if settings != nil {
-		a.forcePaperAuto = settings.Get().ForcePaperAuto
-	}
+	a := &ESCLAdapter{scanner: s, listenPort: listenPort, settings: settings, blankPageRemoval: true}
 	a.caps = a.buildCapabilities()
 	return a
 }
@@ -93,14 +90,6 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 
 	minWidth := 50 * abstract.Millimeter
 	minHeight := 50 * abstract.Millimeter
-	if a.forcePaperAuto {
-		// Constrain to A4 so eSCL clients always send A4 region (= auto paper detect).
-		// Min is 1mm less than Max to avoid go-mfp ceil(min) > floor(max) rounding.
-		minWidth = 209 * abstract.Millimeter
-		maxWidth = 210 * abstract.Millimeter
-		minHeight = 296 * abstract.Millimeter
-		maxHeight = 297 * abstract.Millimeter
-	}
 
 	maxOptRes := 300
 	if params != nil && params.MaxResolutionX > 0 {
@@ -160,7 +149,8 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		return nil, err
 	}
 
-	cfg := mapScanConfig(req, a.forcePaperAuto)
+	forcePaperAuto := a.settings != nil && a.settings.Get().ForcePaperAuto
+	cfg := mapScanConfig(req, forcePaperAuto)
 	a.mu.Lock()
 	cfg.BlankPageRemoval = a.blankPageRemoval
 	a.mu.Unlock()
