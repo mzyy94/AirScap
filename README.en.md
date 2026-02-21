@@ -195,3 +195,26 @@ Full protocol documentation:
 ## License
 
 [MIT](LICENSE)
+
+### Third-party Licenses
+
+This software uses the following open-source libraries:
+
+| Library | License |
+|---|---|
+| [go-mfp](https://github.com/OpenPrinting/go-mfp) | BSD 2-Clause |
+| [go-pdf/fpdf](https://codeberg.org/go-pdf/fpdf) | MIT |
+| [zeroconf](https://github.com/grandcat/zeroconf) | MIT |
+| [jlaffaye/ftp](https://github.com/jlaffaye/ftp) | ISC |
+| [golang.org/x/image](https://pkg.go.dev/golang.org/x/image) | BSD 3-Clause |
+| [Alpine.js](https://alpinejs.dev/) | MIT |
+| [Bulma](https://bulma.io/) | MIT |
+| [Feather Icons](https://feathericons.com/) | MIT |
+
+Release binaries statically link the following C libraries:
+
+| Library | License |
+|---|---|
+| [libjpeg-turbo](https://libjpeg-turbo.org/) | BSD / IJG |
+| [libpng](http://www.libpng.org/) | libpng License |
+| [zlib](https://zlib.net/) | zlib License |
