@@ -69,6 +69,14 @@ const MESSAGES = {
   modeGrayscale:    { en: 'Grayscale',   ja: 'グレースケール' },
   modeBW:           { en: 'B&W',         ja: '白黒' },
 
+  // Paper size
+  paperSize:        { en: 'Paper Size',    ja: '用紙サイズ' },
+  paper_auto:       { en: 'Auto',          ja: '自動' },
+  paper_a4:         { en: 'A4',            ja: 'A4' },
+  paper_a5:         { en: 'A5',            ja: 'A5' },
+  paper_business_card: { en: 'Biz Card',   ja: '名刺' },
+  paper_postcard:   { en: 'Postcard',      ja: 'はがき' },
+
   // AirScan settings
   airscanSettings:  { en: 'AirScan Settings',      ja: 'AirScan 設定' },
   forcePaperAuto:   { en: 'Auto paper size detect', ja: '用紙サイズ自動検出' },

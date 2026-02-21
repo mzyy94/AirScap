@@ -104,6 +104,31 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	}
 	cfg.BleedThrough = s.BleedThrough
 	cfg.BWDensity = s.BWDensity
+
+	// Paper size for button scan
+	switch s.PaperSize {
+	case "a4":
+		cfg.PaperSize = vens.PaperA4
+		dim := vens.PaperDimensions[vens.PaperA4]
+		cfg.PaperWidth = dim.Width
+		cfg.PaperHeight = dim.Height
+	case "a5":
+		cfg.PaperSize = vens.PaperA5
+		dim := vens.PaperDimensions[vens.PaperA5]
+		cfg.PaperWidth = dim.Width
+		cfg.PaperHeight = dim.Height
+	case "business_card":
+		cfg.PaperSize = vens.PaperBusinessCard
+		dim := vens.PaperDimensions[vens.PaperBusinessCard]
+		cfg.PaperWidth = dim.Width
+		cfg.PaperHeight = dim.Height
+	case "postcard":
+		cfg.PaperSize = vens.PaperPostcard
+		dim := vens.PaperDimensions[vens.PaperPostcard]
+		cfg.PaperWidth = dim.Width
+		cfg.PaperHeight = dim.Height
+	}
+
 	return cfg
 }
 

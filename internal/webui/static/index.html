@@ -194,6 +194,19 @@
           </div>
 
           <div class="field">
+            <label class="label is-small" x-text="t('paperSize')"></label>
+            <div class="control">
+              <div class="select is-fullwidth">
+                <select x-model="scanConfig.paperSize" @change="debounceSaveSettings()">
+                  <template x-for="ps in ['auto', 'a4', 'a5', 'business_card', 'postcard']" :key="ps">
+                    <option :value="ps" x-text="t('paper_' + ps)"></option>
+                  </template>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
             <label class="label is-small" x-text="t('outputFormat')"></label>
             <div class="control">
               <div class="select is-fullwidth">
@@ -468,7 +481,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', forcePaperAuto: false },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', forcePaperAuto: false },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         scanPreview: { scanning: false, error: '', pages: [], showModal: false, currentPage: 0 },
         settingsReady: false,
@@ -522,6 +535,7 @@
               ftpPassword: s.ftpPassword || '',
               paperlessUrl: s.paperlessUrl || '',
               paperlessToken: s.paperlessToken || '',
+              paperSize: s.paperSize || 'auto',
               forcePaperAuto: s.forcePaperAuto || false,
             };
             this.clampToCapabilities();
@@ -573,6 +587,7 @@
               ftpPassword: this.scanConfig.ftpPassword,
               paperlessUrl: this.scanConfig.paperlessUrl,
               paperlessToken: this.scanConfig.paperlessToken,
+              paperSize: this.scanConfig.paperSize,
               forcePaperAuto: this.scanConfig.forcePaperAuto,
             };
             const resp = await fetch('api/settings', {

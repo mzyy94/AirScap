@@ -24,7 +24,8 @@ type Settings struct {
 	FTPPassword      string `json:"ftpPassword"`
 	PaperlessURL     string `json:"paperlessUrl"`
 	PaperlessToken   string `json:"paperlessToken"`
-	ForcePaperAuto   bool   `json:"forcePaperAuto"` // AirScan: force paper auto-detect by constraining max area to A4
+	ForcePaperAuto   bool   `json:"forcePaperAuto"` // AirScan: force paper auto-detect for eSCL clients
+	PaperSize        string `json:"paperSize"`      // button scan paper size: "auto", "a4", "a5", "business_card", "postcard"
 }
 
 // DefaultSettings returns the default scan settings.
