@@ -9,14 +9,14 @@ permissions:
 
 jobs:
   build-deb:
-    runs-on: ubuntu-latest
     strategy:
       matrix:
         include:
-          - goarch: amd64
-            nfpm_arch: amd64
-          - goarch: arm64
-            nfpm_arch: arm64
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
 
     steps:
       - name: Checkout
@@ -38,9 +38,6 @@ jobs:
         run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
 
       - name: Build binary
-        env:
-          GOOS: linux
-          GOARCH: ${{ matrix.goarch }}
         run: |
           mkdir -p dist/build
           go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" -o dist/build/airscap ./cmd/airscap/
@@ -48,12 +45,12 @@ jobs:
       - name: Build .deb package
         env:
           VERSION: ${{ steps.version.outputs.version }}
-          NFPM_ARCH: ${{ matrix.nfpm_arch }}
+          NFPM_ARCH: ${{ matrix.arch }}
         run: nfpm package --packager deb --target ./
 
       - name: Upload .deb to release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cp airscap_*.deb "airscap_${{ matrix.nfpm_arch }}.deb"
+          cp airscap_*.deb "airscap_${{ matrix.arch }}.deb"
           gh release upload "$GITHUB_REF_NAME" ./*.deb
