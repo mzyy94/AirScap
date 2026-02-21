@@ -149,11 +149,20 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		return nil, err
 	}
 
-	forcePaperAuto := a.settings != nil && a.settings.Get().ForcePaperAuto
+	forcePaperAuto := a.settings != nil && a.settings.Get().AirscanForcePaperAuto
 	cfg := mapScanConfig(req, forcePaperAuto)
 	a.mu.Lock()
 	cfg.BlankPageRemoval = a.blankPageRemoval
 	a.mu.Unlock()
+
+	// Apply server-side AirScan overrides from settings
+	if a.settings != nil {
+		s := a.settings.Get()
+		cfg.BleedThrough = s.AirscanBleedThrough
+		if req.Threshold == nil {
+			cfg.BWDensity = s.AirscanBWDensity
+		}
+	}
 
 	slog.Info("scan requested",
 		"colorMode", req.ColorMode,
@@ -161,6 +170,7 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		"adfMode", req.ADFMode,
 		"duplex", cfg.Duplex,
 		"blankPageRemoval", cfg.BlankPageRemoval,
+		"bleedThrough", cfg.BleedThrough,
 		"bwDensity", cfg.BWDensity,
 		"paperWidth", cfg.PaperWidth,
 		"paperHeight", cfg.PaperHeight,

@@ -12,6 +12,7 @@ import (
 type Settings struct {
 	ColorMode        string `json:"colorMode"`
 	Resolution       int    `json:"resolution"`
+	PaperSize        string `json:"paperSize"` // "auto", "a4", "a5", "business_card", "postcard"
 	Duplex           bool   `json:"duplex"`
 	Format           string `json:"format"`
 	BlankPageRemoval *bool  `json:"blankPageRemoval"` // nil = default (true)
@@ -24,8 +25,9 @@ type Settings struct {
 	FTPPassword      string `json:"ftpPassword"`
 	PaperlessURL     string `json:"paperlessUrl"`
 	PaperlessToken   string `json:"paperlessToken"`
-	ForcePaperAuto   bool   `json:"forcePaperAuto"` // AirScan: force paper auto-detect for eSCL clients
-	PaperSize        string `json:"paperSize"`      // button scan paper size: "auto", "a4", "a5", "business_card", "postcard"
+	AirscanForcePaperAuto bool   `json:"airscanForcePaperAuto"` // AirScan: force paper auto-detect for eSCL clients
+	AirscanBleedThrough   bool   `json:"airscanBleedThrough"`   // AirScan: apply bleed-through reduction
+	AirscanBWDensity      int    `json:"airscanBwDensity"`      // AirScan: B&W density override (-5 to +5)
 }
 
 // DefaultSettings returns the default scan settings.

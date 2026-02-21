@@ -145,8 +145,9 @@ Access the built-in management interface at `http://<host>:8080/ui/`.
 
 - **Status** &mdash; Connection state, ADF paper presence, error states (paper jam, cover open, multi-feed)
 - **Device Info** &mdash; Scanner name, serial, IP, firmware revision
-- **Scan Settings** &mdash; Color mode, resolution, duplex, output format, blank page removal, bleed-through reduction
+- **Button Scan Settings** &mdash; Color mode, resolution, paper size, output format, duplex, blank page removal, bleed-through reduction
 - **Save Destination** &mdash; Configure local folder / FTP / Paperless-ngx for button scans
+- **AirScan Settings** &mdash; Auto paper size detect, bleed-through reduction, B&W density overrides for AirScan clients
 - **eSCL Endpoint** &mdash; URL for manual eSCL client configuration
 - **i18n** &mdash; English / Japanese toggle
 

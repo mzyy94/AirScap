@@ -240,8 +240,8 @@ func TestMapScanConfig_ZeroRegionIsAuto(t *testing.T) {
 	}
 }
 
-func TestMapScanConfig_ForcePaperAuto(t *testing.T) {
-	// Even with a specific region, forcePaperAuto skips paper override
+func TestMapScanConfig_AirscanForcePaperAuto(t *testing.T) {
+	// Even with a specific region, airscanForcePaperAuto skips paper override
 	req := abstract.ScannerRequest{
 		Region: abstract.Region{
 			Width:  210 * abstract.Millimeter,
@@ -335,7 +335,7 @@ func TestBuildCapabilities_WithScanParams(t *testing.T) {
 		t.Errorf("MaxHeight = %d, want %d", caps.ADFSimplex.MaxHeight, expectedMaxHeight)
 	}
 
-	// MinWidth/MinHeight default (non-ForcePaperAuto)
+	// MinWidth/MinHeight default (non-AirscanForcePaperAuto)
 	if caps.ADFSimplex.MinWidth != 50*abstract.Millimeter {
 		t.Errorf("MinWidth = %d, want %d", caps.ADFSimplex.MinWidth, 50*abstract.Millimeter)
 	}

@@ -196,7 +196,7 @@
           <div class="field">
             <label class="label is-small" x-text="t('paperSize')"></label>
             <div class="control">
-              <div class="select is-fullwidth">
+              <div class="select is-ful lwidth">
                 <select x-model="scanConfig.paperSize" @change="debounceSaveSettings()">
                   <template x-for="ps in ['auto', 'a4', 'a5', 'business_card', 'postcard']" :key="ps">
                     <option :value="ps" x-text="t('paper_' + ps)"></option>
@@ -400,12 +400,28 @@
         </header>
         <div class="card-content">
           <div class="field">
-            <label class="label is-small" x-text="t('forcePaperAuto')"></label>
+            <label class="label is-small" x-text="t('airscanForcePaperAuto')"></label>
             <div class="buttons has-addons">
-              <button type="button" class="button" :class="scanConfig.forcePaperAuto ? 'is-primary is-selected' : ''" @click="scanConfig.forcePaperAuto = true; debounceSaveSettings()">ON</button>
-              <button type="button" class="button" :class="!scanConfig.forcePaperAuto ? 'is-primary is-selected' : ''" @click="scanConfig.forcePaperAuto = false; debounceSaveSettings()">OFF</button>
+              <button type="button" class="button" :class="scanConfig.airscanForcePaperAuto ? 'is-primary is-selected' : ''" @click="scanConfig.airscanForcePaperAuto = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.airscanForcePaperAuto ? 'is-primary is-selected' : ''" @click="scanConfig.airscanForcePaperAuto = false; debounceSaveSettings()">OFF</button>
             </div>
-            <p class="help" x-text="t('forcePaperAutoHelp')"></p>
+            <p class="help" x-text="t('airscanForcePaperAutoHelp')"></p>
+          </div>
+
+          <div class="field">
+            <label class="label is-small" x-text="t('airscanBleedThrough')"></label>
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="scanConfig.airscanBleedThrough ? 'is-primary is-selected' : ''" @click="scanConfig.airscanBleedThrough = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.airscanBleedThrough ? 'is-primary is-selected' : ''" @click="scanConfig.airscanBleedThrough = false; debounceSaveSettings()">OFF</button>
+            </div>
+            <p class="help" x-text="t('airscanBleedThroughHelp')"></p>
+          </div>
+
+          <div class="field">
+            <label class="label is-small"><span x-text="t('airscanBwDensity')"></span> <span class="has-text-weight-normal has-text-grey" x-text="(scanConfig.airscanBwDensity > 0 ? '+' : '') + scanConfig.airscanBwDensity"></span></label>
+            <input type="range" min="-5" max="5" step="1" x-model.number="scanConfig.airscanBwDensity" @change="debounceSaveSettings()">
+            <div class="range-labels"><span>-5</span><span>0</span><span>+5</span></div>
+            <p class="help" x-text="t('airscanBwDensityHelp')"></p>
           </div>
         </div>
       </div>
@@ -481,7 +497,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', forcePaperAuto: false },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', airscanForcePaperAuto: false, airscanBleedThrough: false, airscanBwDensity: 0 },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         scanPreview: { scanning: false, error: '', pages: [], showModal: false, currentPage: 0 },
         settingsReady: false,
@@ -536,7 +552,9 @@
               paperlessUrl: s.paperlessUrl || '',
               paperlessToken: s.paperlessToken || '',
               paperSize: s.paperSize || 'auto',
-              forcePaperAuto: s.forcePaperAuto || false,
+              airscanForcePaperAuto: s.airscanForcePaperAuto || false,
+              airscanBleedThrough: s.airscanBleedThrough || false,
+              airscanBwDensity: s.airscanBwDensity ?? 0,
             };
             this.clampToCapabilities();
             this.settingsReady = true;
@@ -588,7 +606,9 @@
               paperlessUrl: this.scanConfig.paperlessUrl,
               paperlessToken: this.scanConfig.paperlessToken,
               paperSize: this.scanConfig.paperSize,
-              forcePaperAuto: this.scanConfig.forcePaperAuto,
+              airscanForcePaperAuto: this.scanConfig.airscanForcePaperAuto,
+              airscanBleedThrough: this.scanConfig.airscanBleedThrough,
+              airscanBwDensity: Number(this.scanConfig.airscanBwDensity),
             };
             const resp = await fetch('api/settings', {
               method: 'PUT',

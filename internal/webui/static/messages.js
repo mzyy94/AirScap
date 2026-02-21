@@ -3,7 +3,7 @@ const MESSAGES = {
   status:           { en: 'Status',           ja: 'ステータス' },
   deviceInfo:       { en: 'Device Info',      ja: 'デバイス情報' },
   capabilities:     { en: 'Capabilities',     ja: 'スキャン機能' },
-  scanSettings:     { en: 'Scan Settings',    ja: 'スキャン設定' },
+  scanSettings:     { en: 'Button Scan Settings', ja: 'ボタンスキャン設定' },
   saveDestination:  { en: 'Save Destination', ja: '保存先' },
   scan:             { en: 'Scan',             ja: 'スキャン' },
   esclEndpoint:     { en: 'eSCL Endpoint',    ja: 'eSCL エンドポイント' },
@@ -78,9 +78,13 @@ const MESSAGES = {
   paper_postcard:   { en: 'Postcard',      ja: 'はがき' },
 
   // AirScan settings
-  airscanSettings:  { en: 'AirScan Settings',      ja: 'AirScan 設定' },
-  forcePaperAuto:   { en: 'Auto paper size detect', ja: '用紙サイズ自動検出' },
-  forcePaperAutoHelp: { en: 'Force auto paper size detection for AirScan clients (macOS Image Capture, etc.). Takes effect on the next scan.', ja: 'AirScan クライアント (macOS Image Capture 等) で用紙サイズを自動検出に強制する。次回のスキャンから反映されます。' },
+  airscanSettings:           { en: 'AirScan Settings',        ja: 'AirScan 設定' },
+  airscanForcePaperAuto:     { en: 'Auto paper size detect',  ja: '用紙サイズ自動検出' },
+  airscanForcePaperAutoHelp: { en: 'Ignore paper size specified by AirScan clients and always use auto-detect. Takes effect on the next scan.', ja: 'AirScan クライアントが指定した用紙サイズを無視し、常に自動検出を使用する。次回のスキャンから反映されます。' },
+  airscanBleedThrough:       { en: 'Bleed-through reduction', ja: '裏写り軽減' },
+  airscanBleedThroughHelp:   { en: 'Apply bleed-through reduction to AirScan scans.', ja: 'AirScan スキャンに裏写り軽減を適用する。' },
+  airscanBwDensity:          { en: 'B&W Density',             ja: '白黒濃度' },
+  airscanBwDensityHelp:      { en: 'Default B&W density for AirScan clients that don\'t specify threshold.', ja: 'Threshold を指定しない AirScan クライアント用の白黒濃度デフォルト値。' },
 
   // Browser scan
   scanNow:          { en: 'Scan & Preview',                 ja: 'スキャンしてプレビュー' },
