@@ -364,13 +364,15 @@ func ParseDataDeviceInfo(data []byte) (*DataDeviceInfo, error) {
 	if len(data) < 136 {
 		return nil, fmt.Errorf("device info response too short: %d bytes", len(data))
 	}
-	name := nullTerminated(data[48:81])
+	raw := nullTerminated(data[48:81])
 	// Firmware revision is the last space-separated token in the device name
-	// e.g. "FUJITSU ScanSnap iX500  0M00" → revision "0M00"
+	// e.g. "FUJITSU ScanSnap iX500  0M00" → name "FUJITSU ScanSnap iX500", revision "0M00"
 	var revision string
-	trimmed := strings.TrimRight(name, " ")
+	trimmed := strings.TrimRight(raw, " ")
+	name := trimmed
 	if i := strings.LastIndex(trimmed, " "); i >= 0 {
 		revision = trimmed[i+1:]
+		name = strings.TrimRight(trimmed[:i], " ")
 	}
 	return &DataDeviceInfo{
 		DeviceName:       name,

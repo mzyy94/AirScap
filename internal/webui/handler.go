@@ -63,7 +63,6 @@ type deviceInfo struct {
 	Name             string `json:"name"`
 	Serial           string `json:"serial"`
 	Host             string `json:"host"`
-	Manufacturer     string `json:"manufacturer"`
 	FirmwareRevision string `json:"firmwareRevision,omitempty"`
 }
 
@@ -85,10 +84,9 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		Online: online,
 		State:  state,
 		Device: deviceInfo{
-			Name:             h.sc.Name(),
+			Name:             h.sc.MakeAndModel(),
 			Serial:           h.sc.Serial(),
 			Host:             h.sc.Host(),
-			Manufacturer:     h.sc.Manufacturer(),
 			FirmwareRevision: h.sc.FirmwareRevision(),
 		},
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),

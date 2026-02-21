@@ -189,8 +189,9 @@ func TestParseDataDeviceInfo(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseDataDeviceInfo failed: %v", err)
 	}
-	if info.DeviceName != name {
-		t.Errorf("DeviceName = %q, want %q", info.DeviceName, name)
+	wantName := "FUJITSU ScanSnap iX500"
+	if info.DeviceName != wantName {
+		t.Errorf("DeviceName = %q, want %q", info.DeviceName, wantName)
 	}
 	if info.FirmwareRevision != "0M00" {
 		t.Errorf("FirmwareRevision = %q, want %q", info.FirmwareRevision, "0M00")

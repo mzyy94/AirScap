@@ -125,9 +125,9 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 	// Generate deterministic UUID from scanner host
 	deviceUUID := uuid.SHA1(uuid.NameSpaceDNS, "airscap."+a.scanner.Host())
 
-	name := a.scanner.Name()
+	name := a.scanner.MakeAndModel()
 	if name == "" {
-		name = "ScanSnap"
+		name = "Unknown"
 	}
 
 	serial := a.scanner.Serial()
@@ -135,15 +135,9 @@ func (a *ESCLAdapter) buildCapabilities() *abstract.ScannerCapabilities {
 		serial = a.scanner.Host()
 	}
 
-	manufacturer := a.scanner.Manufacturer()
-	if manufacturer == "" {
-		manufacturer = "Unknown"
-	}
-
 	return &abstract.ScannerCapabilities{
 		UUID:            deviceUUID,
 		MakeAndModel:    name,
-		Manufacturer:    manufacturer,
 		SerialNumber:    serial,
 		AdminURI:        fmt.Sprintf("http://%s:%d/ui/", vens.GetLocalIP(a.scanner.Host()), a.listenPort),
 		DocumentFormats: []string{"image/jpeg", "image/tiff", "application/pdf"},

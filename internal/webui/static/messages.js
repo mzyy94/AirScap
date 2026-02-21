@@ -22,7 +22,6 @@ const MESSAGES = {
   name:             { en: 'Name',         ja: '名前' },
   serial:           { en: 'Serial',       ja: 'シリアル' },
   ipAddress:        { en: 'IP Address',   ja: 'IP アドレス' },
-  manufacturer:     { en: 'Manufacturer', ja: 'メーカー' },
   fwRevision:       { en: 'F/W Revision', ja: 'F/W リビジョン' },
 
   // Capabilities

@@ -345,14 +345,15 @@ func (s *Scanner) ScanParams() *vens.ScanParams {
 	return s.scanParams
 }
 
-// Manufacturer extracts the manufacturer from the device name
-func (s *Scanner) Manufacturer() string {
+// MakeAndModel returns the device name (already stripped of firmware revision by ParseDataDeviceInfo).
+// Falls back to the discovery name if the full device name is unavailable.
+func (s *Scanner) MakeAndModel() string {
 	s.mu.Lock()
 	dn := s.deviceName
+	name := strings.TrimSpace(s.name)
 	s.mu.Unlock()
-	if dn == "" {
-		return ""
+	if dn != "" {
+		return dn
 	}
-	name, _, _ := strings.Cut(dn, " ")
 	return name
 }

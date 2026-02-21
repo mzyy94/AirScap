@@ -278,11 +278,12 @@ func TestMapScanConfig_Defaults(t *testing.T) {
 // newTestScanner creates a minimal Scanner with the given ScanParams for testing.
 func newTestScanner(params *vens.ScanParams) *Scanner {
 	s := &Scanner{
-		host: "192.168.5.3",
-		name: "ScanSnap iX500",
-		serial: "iX500-TEST",
-		deviceName: "FUJITSU ScanSnap iX500  0M00",
-		scanParams: params,
+		host:             "192.168.5.3",
+		name:             "ScanSnap iX500",
+		serial:           "iX500-TEST",
+		deviceName:       "FUJITSU ScanSnap iX500",
+		firmwareRevision: "0M00",
+		scanParams:       params,
 	}
 	return s
 }
@@ -339,12 +340,9 @@ func TestBuildCapabilities_WithScanParams(t *testing.T) {
 		t.Errorf("MinWidth = %d, want %d", caps.ADFSimplex.MinWidth, 50*abstract.Millimeter)
 	}
 
-	// Device info
-	if caps.MakeAndModel != "ScanSnap iX500" {
-		t.Errorf("MakeAndModel = %q, want %q", caps.MakeAndModel, "ScanSnap iX500")
-	}
-	if caps.Manufacturer != "FUJITSU" {
-		t.Errorf("Manufacturer = %q, want %q", caps.Manufacturer, "FUJITSU")
+	// Device info: MakeAndModel from DeviceName minus firmware revision
+	if caps.MakeAndModel != "FUJITSU ScanSnap iX500" {
+		t.Errorf("MakeAndModel = %q, want %q", caps.MakeAndModel, "FUJITSU ScanSnap iX500")
 	}
 	if caps.SerialNumber != "iX500-TEST" {
 		t.Errorf("SerialNumber = %q, want %q", caps.SerialNumber, "iX500-TEST")
@@ -429,14 +427,11 @@ func TestBuildCapabilities_EmptyName(t *testing.T) {
 	a := &ESCLAdapter{scanner: s, listenPort: 8080}
 	caps := a.buildCapabilities()
 
-	if caps.MakeAndModel != "ScanSnap" {
-		t.Errorf("MakeAndModel = %q, want %q (fallback)", caps.MakeAndModel, "ScanSnap")
+	if caps.MakeAndModel != "Unknown" {
+		t.Errorf("MakeAndModel = %q, want %q (fallback)", caps.MakeAndModel, "Unknown")
 	}
 	if caps.SerialNumber != "192.168.5.3" {
 		t.Errorf("SerialNumber = %q, want %q (fallback to host)", caps.SerialNumber, "192.168.5.3")
-	}
-	if caps.Manufacturer != "Unknown" {
-		t.Errorf("Manufacturer = %q, want %q (fallback)", caps.Manufacturer, "Unknown")
 	}
 }
 
