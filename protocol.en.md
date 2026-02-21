@@ -636,20 +636,30 @@ SCSI REQUEST SENSE command used for both retrieving page metadata after a page t
 | 0 | 4 | Length | `0x0000003A` (58) |
 | 4 | 4 | Magic | "VENS" |
 | 8 | 32 | Header | Zero-filled |
-| 40 | 2 | Image Format | `0xF000` |
-| 42 | 2 | Page Dimensions | Resolution-related |
-| 44 | 4 | Total Image Size | Total size of the transferred page pair |
-| 48 | 10 | Reserved | Zero-filled |
+| 40 | 18 | Sense Data | SCSI Fixed Format Sense Data (see below) |
+
+Bytes at offset 40+ are **standard SCSI Fixed Format Sense Data** (18 bytes), used for both successful page acknowledgment and error reporting.
+
+**Sense Data structure:**
+
+| Sense Offset | Size | Field | Description |
+|-------------|------|-------|-------------|
+| 0 | 1 | Error Code | `0xF0` — Fixed format, Valid=1 |
+| 1 | 1 | Segment Number | `0x00` |
+| 2 | 1 | Flags + Sense Key | `0x60`=page OK (ILI=1, EOM=1, SK=0), `0x03`=Medium Error |
+| 3 | 4 | Information | SCSI residual byte count (internal counter on success) |
+| 7 | 1 | Additional Sense Length | `0x0A` (10) |
+| 8 | 4 | Command Specific Info | `0x00000000` |
+| 12 | 1 | ASC | Additional Sense Code (`0x00`=OK, `0x80`=vendor-specific) |
+| 13 | 1 | ASCQ | Additional Sense Code Qualifier (see below) |
+| 14 | 1 | FRUC | `0x00` |
+| 15 | 3 | Sense Key Specific | `0x000000` |
+
+On success (SK=0, ASC=0, ASCQ=0), the Information field contains the transfer buffer residual byte count for the final chunk.
 
 **Error detection usage:**
 
-When WAIT_FOR_SCAN ([§5.3.7]) returns status≠0, sending REQUEST SENSE on the same TCP connection retrieves SCSI sense data with error details. The sense data is located at response offset 40+.
-
-| Sense Data Offset | Field | Description |
-|-------------------|-------|-------------|
-| +2 (bits 3:0) | Sense Key (SK) | `0x03` = Medium Error |
-| +12 | ASC | `0x80` = Vendor-specific |
-| +13 | ASCQ | Error type (see below) |
+When WAIT_FOR_SCAN ([§5.3.7]) returns status≠0, sending REQUEST SENSE on the same TCP connection retrieves SCSI sense data with error details.
 
 **Vendor-specific ASCQ (when ASC=0x80):**
 
@@ -915,7 +925,7 @@ Requests scan page data transfer using a 12-byte CDB that extends the standard S
 |-----------|------|-------|-------------|
 | 0 | 1 | Opcode | `0x28` — SCSI READ(10) |
 | 1 | 1 | Reserved | `0x00` |
-| 2 | 1 | Data Type | `0x00`=IMAGE, `0x01`=THUMBNAIL |
+| 2 | 1 | Data Type | Data type (see below) |
 | 3 | 1 | Transfer Mode | `0x02` = BLOCK_UNTIL_AVAIL |
 | 4 | 1 | Reserved | `0x00` |
 | 5 | 1 | Front/Back | `0x00`=front, `0x80`=back |
@@ -924,7 +934,23 @@ Requests scan page data transfer using a 12-byte CDB that extends the standard S
 | 10 | 1 | Page ID | Transfer sheet counter (0, 1, 2, ...) |
 | 11 | 1 | Sequence ID | Chunk number (0, 1, 2, ...) |
 
+**Data Type values:**
+
+| Value | Name | Transfer Length | Description |
+|-------|------|-----------------|-------------|
+| `0x00` | IMAGE | `0x040000` (256KB) | Image data (chunked transfer) |
+| `0x01` | THUMBNAIL | variable | Thumbnail (unused) |
+| `0x80` | PIXELSIZE | `0x000020` (32B) | Actual pixel dimensions after scan ([§6.5]) |
+| `0x81` | PAPERSIZE | `0x000008` (8B) | Detected paper size after scan ([§6.6]) |
+| `0x83` | CARRIER_SHEET | `0x000004` (4B) | Carrier sheet detection info ([§6.7]) |
+
+For IMAGE transfer, Transfer Mode=`0x02` (BLOCK_UNTIL_AVAIL) blocks until data is ready. For metadata queries (PIXELSIZE/PAPERSIZE/CARRIER_SHEET), Transfer Mode=`0x00` (immediate) and Sequence ID=`0x00`.
+
 In duplex mode, CDB[5] alternates between front and back (`0x00`=front, `0x80`=back). In simplex mode, always `0x00` (front). Page ID is a sequential counter per transfer sheet — in duplex: front=0, back=1, front=2, back=3, etc.
+
+[§6.5]: #65-pixel-size-query-pixelsize-datatype0x80
+[§6.6]: #66-paper-size-query-papersize-datatype0x81
+[§6.7]: #67-carrier-sheet-info-carrier_sheet-datatype0x83
 
 #### Response (42-byte header + JPEG data)
 
@@ -971,6 +997,56 @@ Transferred image data uses standard JPEG/JFIF format.
 - **Resolution:** Depends on scan settings DPI
 - **Comment (COM):** `"PFU ScanSnap #iX500"`
 - **EOI marker:** `0xFFD9`
+
+### 6.5 Pixel Size Query (PIXELSIZE: DataType=0x80)
+
+After IMAGE transfer completes for a page, retrieves the actual pixel dimensions and resolution of the scanned image. Uses READ(10) with DataType=`0x80`, Transfer Length=`0x000020` (32 bytes), Transfer Mode=`0x00`.
+
+> [!WARNING]
+> This feature is unverified on real hardware. The response frame structure (header size, etc.) requires confirmation with a real device.
+
+**Response payload (32 bytes):**
+
+| Offset | Size | Field | Description |
+|--------|------|-------|-------------|
+| 0x00 | 4 | nXPixels | Width in pixels (big-endian int) |
+| 0x04 | 4 | nYPixels | Height in pixels (big-endian int) |
+| 0x08 | 4 | Reserved | — |
+| 0x0C | 4 | nDetectedLength | Detected paper length (1/1200 inch) |
+| 0x10 | 2 | Reserved | — |
+| 0x12 | 2 | nXRes | Actual X resolution (DPI, big-endian short) |
+| 0x14 | 2 | nYRes | Actual Y resolution (DPI, big-endian short) |
+| 0x16 | 10 | Reserved | — |
+
+### 6.6 Paper Size Query (PAPERSIZE: DataType=0x81)
+
+Retrieves the paper size code detected by the scanner. Uses READ(10) with DataType=`0x81`, Transfer Length=`0x000008` (8 bytes).
+
+> [!WARNING]
+> This feature is unverified on real hardware.
+
+**Response payload (8 bytes):**
+
+| Offset | Size | Field | Description |
+|--------|------|-------|-------------|
+| 0x00 | 4 | Reserved | — |
+| 0x04 | 2 | nPaperSize | Detected paper size code (A4=1, A5=2, B5=3, ...) |
+| 0x06 | 2 | Reserved | — |
+
+### 6.7 Carrier Sheet Info (CARRIER_SHEET: DataType=0x83)
+
+Retrieves carrier sheet detection state. Uses READ(10) with DataType=`0x83`, Transfer Length=`0x000004` (4 bytes).
+
+> [!WARNING]
+> This feature is unverified on real hardware.
+
+**Response payload (4 bytes):**
+
+| Offset | Size | Field | Description |
+|--------|------|-------|-------------|
+| 0x00 | 1 | Flags 0 | bit 7 (`0x80`): carrier sheet detection enabled |
+| 0x01 | 1 | Flags 1 | bit 0 (`0x01`): carrier sheet detected, bit 1 (`0x02`): extended info detected |
+| 0x02 | 2 | Reserved | — |
 
 ---
 

@@ -520,6 +520,44 @@ func MarshalPageTransfer(token [8]byte, sheet int, chunk int, backSide bool) []b
 	return marshalDataRequest(token, CmdPageTransfer, p)
 }
 
+// MarshalReadPixelSize builds a SCSI READ(10) request for pixel size metadata (DataType=0x80).
+// Must be called on the same connection after IMAGE transfer for the given page.
+func MarshalReadPixelSize(token [8]byte, sheet int, backSide bool) []byte {
+	p := newPacket(28)
+	p.putU32(0, PixelSizeResponseLen)
+
+	cdb := p[12:24]
+	cdb[0] = SCSIOpcodeRead10
+	cdb[2] = DataTypePixelSize
+	if backSide {
+		cdb[5] = 0x80
+	}
+	tlen := PixelSizeResponseLen
+	cdb[6] = byte(tlen >> 16)
+	cdb[7] = byte(tlen >> 8)
+	cdb[8] = byte(tlen)
+	cdb[10] = byte(sheet)
+
+	return marshalDataRequest(token, CmdPageTransfer, p)
+}
+
+// ParsePixelSizeInfo parses a PIXELSIZE READ(10) VENS response.
+// The payload starts after the VENS response header at offset 40.
+func ParsePixelSizeInfo(resp []byte) (*PixelSizeInfo, error) {
+	const payloadOffset = 40
+	if len(resp) < payloadOffset+0x16 {
+		return nil, fmt.Errorf("pixelsize response too short: %d bytes", len(resp))
+	}
+	data := resp[payloadOffset:]
+	return &PixelSizeInfo{
+		XPixels:        int(binary.BigEndian.Uint32(data[0x00:0x04])),
+		YPixels:        int(binary.BigEndian.Uint32(data[0x04:0x08])),
+		DetectedLength: int(binary.BigEndian.Uint32(data[0x0C:0x10])),
+		XRes:           int(binary.BigEndian.Uint16(data[0x12:0x14])),
+		YRes:           int(binary.BigEndian.Uint16(data[0x14:0x16])),
+	}, nil
+}
+
 // MarshalGetPageMetadata builds a SCSI REQUEST SENSE request for page metadata after transfer.
 func MarshalGetPageMetadata(token [8]byte) []byte {
 	p := newPacket(28)

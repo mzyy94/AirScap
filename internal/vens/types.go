@@ -93,6 +93,16 @@ type ScanParams struct {
 	MaxHeight      uint16 // 1/1200 inch (converted from 1/600 on the wire)
 }
 
+// PixelSizeInfo holds the actual pixel dimensions of a scanned page,
+// returned by READ(10) with DataType=0x80.
+type PixelSizeInfo struct {
+	XPixels        int // Actual width in pixels
+	YPixels        int // Actual height in pixels
+	DetectedLength int // Detected paper length (1/1200 inch)
+	XRes           int // Actual X resolution (DPI)
+	YRes           int // Actual Y resolution (DPI)
+}
+
 // DataDeviceInfo holds device identity from TCP GET_SET sub=0x12 response.
 type DataDeviceInfo struct {
 	DeviceName       string

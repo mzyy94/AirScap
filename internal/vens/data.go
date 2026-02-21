@@ -32,9 +32,10 @@ func (e *ScanError) Error() string { return e.Msg }
 
 // Page holds a single scanned page image.
 type Page struct {
-	Sheet int    // Physical sheet index (0-based)
-	Side  int    // 0=front, 1=back
-	JPEG  []byte // Raw JPEG data
+	Sheet     int            // Physical sheet index (0-based)
+	Side      int            // 0=front, 1=back
+	JPEG      []byte         // Raw JPEG data
+	PixelSize *PixelSizeInfo // Actual pixel dimensions (nil if not queried)
 }
 
 // DataChannel manages TCP data channel connections (port 53218).
@@ -386,6 +387,20 @@ func (s *ScanSession) NextPage() (Page, error) {
 		slog.Warn("scanner error in sense data", "err", senseErr, "kind", senseErr.Kind)
 		s.done = true
 		return page, senseErr
+	}
+
+	// Query pixel size metadata (best-effort — don't fail the page on error)
+	s.conn.SetDeadline(time.Now().Add(10 * time.Second))
+	if _, err := s.conn.Write(MarshalReadPixelSize(s.token, s.transferSheet, backSide)); err != nil {
+		slog.Debug("pixelsize query send failed", "err", err)
+	} else if psResp, err := readResponse(s.conn); err != nil {
+		slog.Debug("pixelsize query recv failed", "err", err)
+	} else if psInfo, err := ParsePixelSizeInfo(psResp); err != nil {
+		slog.Debug("pixelsize parse failed", "err", err, "hex", hex.EncodeToString(psResp))
+	} else {
+		page.PixelSize = psInfo
+		slog.Info("pixelsize", "xPixels", psInfo.XPixels, "yPixels", psInfo.YPixels,
+			"xRes", psInfo.XRes, "yRes", psInfo.YRes, "detectedLen", psInfo.DetectedLength)
 	}
 
 	s.transferSheet++

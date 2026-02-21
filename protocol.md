@@ -636,20 +636,30 @@ SCSI REQUEST SENSE コマンドで、ページ転送後のメタデータ取得�
 | 0 | 4 | Length | `0x0000003A` (58) |
 | 4 | 4 | Magic | "VENS" |
 | 8 | 32 | Header | ゼロ埋め |
-| 40 | 2 | Image Format | `0xF000` |
-| 42 | 2 | Page Dimensions | 解像度関連 |
-| 44 | 4 | Total Image Size | ページペアの合計サイズ |
-| 48 | 10 | Reserved | ゼロ埋め |
+| 40 | 18 | Sense Data | SCSI Fixed Format Sense Data（下記参照） |
+
+オフセット 40 以降は **SCSI 標準の Fixed Format Sense Data**（18バイト）である。ページ転送後の正常応答とエラー検出の両方でこの形式が使われる。
+
+**Sense Data 構造:**
+
+| Sense オフセット | サイズ | フィールド | 説明 |
+|-----------------|--------|-----------|------|
+| 0 | 1 | Error Code | `0xF0` — Fixed format, Valid=1 |
+| 1 | 1 | Segment Number | `0x00` |
+| 2 | 1 | Flags + Sense Key | `0x60`=ページ正常（ILI=1, EOM=1, SK=0）、`0x03`=Medium Error |
+| 3 | 4 | Information | SCSI 残余バイト数（正常時は内部カウンタ値） |
+| 7 | 1 | Additional Sense Length | `0x0A` (10) |
+| 8 | 4 | Command Specific Info | `0x00000000` |
+| 12 | 1 | ASC | Additional Sense Code（`0x00`=正常, `0x80`=ベンダー固有） |
+| 13 | 1 | ASCQ | Additional Sense Code Qualifier（下記参照） |
+| 14 | 1 | FRUC | `0x00` |
+| 15 | 3 | Sense Key Specific | `0x000000` |
+
+ページ正常時（SK=0, ASC=0, ASCQ=0）の Information フィールドは、最終チャンクの転送バッファ残余バイト数を示す。
 
 **エラー検出での使用:**
 
-WAIT_FOR_SCAN（[§5.3.7]）が status≠0 を返した場合、同一 TCP 接続上で REQUEST SENSE を送信すると、SCSI センスデータでエラーの詳細を取得できる。この場合、レスポンスのオフセット 40 以降にセンスデータが格納される。
-
-| センスデータオフセット | フィールド | 説明 |
-|---------------------|-----------|------|
-| +2 (bit 3:0) | Sense Key (SK) | `0x03` = Medium Error |
-| +12 | ASC | `0x80` = ベンダー固有 |
-| +13 | ASCQ | エラー種別（下記参照） |
+WAIT_FOR_SCAN（[§5.3.7]）が status≠0 を返した場合、同一 TCP 接続上で REQUEST SENSE を送信すると、SCSI センスデータでエラーの詳細を取得できる。
 
 **ベンダー固有 ASCQ（ASC=0x80 時）:**
 
@@ -915,7 +925,7 @@ sequenceDiagram
 |---------------|--------|-----------|------|
 | 0 | 1 | Opcode | `0x28` — SCSI READ(10) |
 | 1 | 1 | Reserved | `0x00` |
-| 2 | 1 | Data Type | `0x00`=IMAGE, `0x01`=THUMBNAIL |
+| 2 | 1 | Data Type | データ種別（下記参照） |
 | 3 | 1 | Transfer Mode | `0x02` = BLOCK_UNTIL_AVAIL |
 | 4 | 1 | Reserved | `0x00` |
 | 5 | 1 | Front/Back | `0x00`=表面, `0x80`=裏面 |
@@ -924,7 +934,23 @@ sequenceDiagram
 | 10 | 1 | Page ID | transfer sheet カウンタ（0, 1, 2, ...） |
 | 11 | 1 | Sequence ID | チャンク番号（0, 1, 2, ...） |
 
+**Data Type 値:**
+
+| 値 | 名称 | Transfer Length | 説明 |
+|----|------|-----------------|------|
+| `0x00` | IMAGE | `0x040000` (256KB) | 画像データ（チャンク転送） |
+| `0x01` | THUMBNAIL | 可変 | サムネイル（未使用） |
+| `0x80` | PIXELSIZE | `0x000020` (32B) | スキャン後の実ピクセルサイズ（[§6.5]） |
+| `0x81` | PAPERSIZE | `0x000008` (8B) | スキャン後の検出用紙サイズ（[§6.6]） |
+| `0x83` | CARRIER_SHEET | `0x000004` (4B) | キャリアシート検出情報（[§6.7]） |
+
+IMAGE 転送時は Transfer Mode=`0x02`（BLOCK_UNTIL_AVAIL）で、データ準備完了までブロックする。メタデータ取得（PIXELSIZE/PAPERSIZE/CARRIER_SHEET）時は Transfer Mode=`0x00`（即時応答）、Sequence ID=`0x00` とする。
+
 両面スキャン時は CDB[5] が表裏で交互に切り替わる（`0x00`=表, `0x80`=裏）。片面スキャンでは常に `0x00`（表面）。Page ID は transfer sheet の連番で、両面時は表=0, 裏=1, 表=2, 裏=3, ... のように進む。
+
+[§6.5]: #65-ピクセルサイズ取得pixelsize-datatype0x80
+[§6.6]: #66-用紙サイズ取得papersize-datatype0x81
+[§6.7]: #67-キャリアシート情報carrier_sheet-datatype0x83
 
 #### レスポンス（42バイトヘッダー + JPEG データ）
 
@@ -971,6 +997,56 @@ page_num = (sheet << 8) | chunk_index
 - **解像度:** スキャン設定の DPI 値に依存
 - **コメント (COM):** `"PFU ScanSnap #iX500"`
 - **EOI マーカー:** `0xFFD9`
+
+### 6.5 ピクセルサイズ取得（PIXELSIZE: DataType=0x80）
+
+各ページの IMAGE 転送完了後に、スキャナーが実際にスキャンした画像のピクセル寸法と解像度を取得する。READ(10) コマンドで DataType=`0x80`、Transfer Length=`0x000020`（32バイト）、Transfer Mode=`0x00` を指定する。
+
+> [!WARNING]
+> この機能は実機未検証。応答フレーム構造（ヘッダサイズ等）は実機での確認が必要。
+
+**レスポンスペイロード（32バイト）:**
+
+| オフセット | サイズ | フィールド | 説明 |
+|-----------|--------|-----------|------|
+| 0x00 | 4 | nXPixels | X方向ピクセル数（big-endian int） |
+| 0x04 | 4 | nYPixels | Y方向ピクセル数（big-endian int） |
+| 0x08 | 4 | Reserved | — |
+| 0x0C | 4 | nDetectedLength | 検出された用紙長さ（1/1200インチ単位） |
+| 0x10 | 2 | Reserved | — |
+| 0x12 | 2 | nXRes | X方向実解像度 (DPI, big-endian short) |
+| 0x14 | 2 | nYRes | Y方向実解像度 (DPI, big-endian short) |
+| 0x16 | 10 | Reserved | — |
+
+### 6.6 用紙サイズ取得（PAPERSIZE: DataType=0x81）
+
+スキャナーが検出した用紙サイズコードを取得する。READ(10) コマンドで DataType=`0x81`、Transfer Length=`0x000008`（8バイト）を指定する。
+
+> [!WARNING]
+> この機能は実機未検証。
+
+**レスポンスペイロード（8バイト）:**
+
+| オフセット | サイズ | フィールド | 説明 |
+|-----------|--------|-----------|------|
+| 0x00 | 4 | Reserved | — |
+| 0x04 | 2 | nPaperSize | 検出された用紙サイズコード（A4=1, A5=2, B5=3, ...） |
+| 0x06 | 2 | Reserved | — |
+
+### 6.7 キャリアシート情報（CARRIER_SHEET: DataType=0x83）
+
+キャリアシートの検出状態を取得する。READ(10) コマンドで DataType=`0x83`、Transfer Length=`0x000004`（4バイト）を指定する。
+
+> [!WARNING]
+> この機能は実機未検証。
+
+**レスポンスペイロード（4バイト）:**
+
+| オフセット | サイズ | フィールド | 説明 |
+|-----------|--------|-----------|------|
+| 0x00 | 1 | Flags 0 | bit 7 (`0x80`): キャリアシート検出有効 |
+| 0x01 | 1 | Flags 1 | bit 0 (`0x01`): キャリアシート検出済み、bit 1 (`0x02`): 拡張情報検出 |
+| 0x02 | 2 | Reserved | — |
 
 ---
 

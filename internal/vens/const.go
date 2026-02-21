@@ -63,6 +63,20 @@ const (
 	SCSIOpcodeRead10       byte = 0x28 // READ(10) — page transfer
 )
 
+// READ(10) Data Type values (CDB byte 2).
+const (
+	DataTypeImage       byte = 0x00 // Image data (chunked transfer)
+	DataTypePixelSize   byte = 0x80 // Pixel size after scan (32 bytes)
+	DataTypePaperSize   byte = 0x81 // Paper size after scan (8 bytes)
+	DataTypeCarrierSheet byte = 0x83 // Carrier sheet info (4 bytes)
+)
+
+// READ(10) response sizes for metadata types.
+const (
+	PixelSizeResponseLen  uint32 = 0x20 // 32 bytes
+	PaperSizeResponseLen  uint32 = 0x08 // 8 bytes
+)
+
 // Page transfer constants.
 const PageTransferLen uint32 = 0x040000 // 256KB per chunk
 
