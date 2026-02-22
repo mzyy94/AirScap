@@ -1,10 +1,13 @@
 package webui
 
 import (
+	"bytes"
 	"embed"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"image"
+	_ "image/jpeg"
 	"io/fs"
 	"log/slog"
 	"net/http"
@@ -14,6 +17,7 @@ import (
 	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/scanner"
 	"github.com/mzyy94/airscap/internal/vens"
+	_ "golang.org/x/image/tiff"
 )
 
 //go:embed static
@@ -194,17 +198,35 @@ func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
 		mime = "image/tiff"
 	}
 
-	// Encode pages as data URLs directly in the response — no server-side storage
-	dataURLs := make([]string, len(pages))
+	type previewPage struct {
+		DataURL string `json:"dataUrl"`
+		Width   int    `json:"width,omitempty"`
+		Height  int    `json:"height,omitempty"`
+		DPI     int    `json:"dpi,omitempty"`
+		Size    int    `json:"size"`
+	}
+
+	result := make([]previewPage, len(pages))
 	for i, p := range pages {
-		dataURLs[i] = fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(p.JPEG))
+		pp := previewPage{
+			DataURL: fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(p.JPEG)),
+			Size:    len(p.JPEG),
+		}
+		if cfg, _, err := image.DecodeConfig(bytes.NewReader(p.JPEG)); err == nil {
+			pp.Width = cfg.Width
+			pp.Height = cfg.Height
+		}
+		if p.PixelSize != nil {
+			pp.DPI = p.PixelSize.XRes
+		}
+		result[i] = pp
 	}
 
 	slog.Info("scan preview complete", "pages", len(pages), "format", mime)
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
-		"pages": dataURLs,
+		"pages": result,
 	})
 }
 

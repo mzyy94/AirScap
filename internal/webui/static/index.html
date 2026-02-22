@@ -467,7 +467,7 @@
 
   <!-- Scan Result Modal -->
   <div class="modal" :class="{'is-active': scanPreview.showModal}" x-cloak>
-    <div class="modal-background" @click="scanPreview.showModal = false"></div>
+    <div class="modal-background"></div>
     <div class="modal-card" style="max-width:90vw; width:640px">
       <header class="modal-card-head">
         <p class="modal-card-title" x-text="t('scanResult')"></p>
@@ -489,13 +489,17 @@
         </nav>
         <!-- Page preview -->
         <figure class="image has-text-centered">
-          <img :src="scanPreview.pages[scanPreview.currentPage]" style="max-height:70vh; object-fit:contain; width:100%;">
+          <img :src="previewPage?.dataUrl" style="max-height:70vh; object-fit:contain; width:100%;">
         </figure>
+        <p class="has-text-centered is-size-7 has-text-grey mt-1"
+          x-show="previewPage?.width"
+          x-text="previewPage?.width + ' \u00d7 ' + previewPage?.height + ' px' + (previewPage?.dpi ? ' (' + previewPage.dpi + ' DPI)' : '') + (previewPage?.size ? ' / ' + new Intl.NumberFormat(lang, { style: 'unit', unit: 'kilobyte', maximumFractionDigits: 0 }).format(previewPage.size / 1024) : '')">
+        </p>
       </section>
       <footer class="modal-card-foot">
         <div class="buttons">
-          <a class="button is-primary" :href="scanPreview.pages[scanPreview.currentPage]"
-            :download="'scan_' + (scanPreview.currentPage + 1) + (scanPreview.pages[scanPreview.currentPage]?.startsWith('data:image/tiff') ? '.tiff' : '.jpg')"
+          <a class="button is-primary" :href="previewPage?.dataUrl"
+            :download="'scan_' + (scanPreview.currentPage + 1) + (previewPage?.dataUrl?.startsWith('data:image/tiff') ? '.tiff' : '.jpg')"
             x-text="t('downloadPage')"></a>
           <button class="button" @click="scanPreview.showModal = false" x-text="t('close')"></button>
         </div>
@@ -512,6 +516,7 @@
         scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, compression: 3, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', airscanForcePaperAuto: false, airscanBleedThrough: false, airscanBwDensity: 0 },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         scanPreview: { scanning: false, error: '', pages: [], showModal: false, currentPage: 0 },
+        get previewPage() { return this.scanPreview.pages[this.scanPreview.currentPage]; },
         settingsReady: false,
         settingsSaved: false,
         settingsError: false,
