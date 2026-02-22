@@ -221,6 +221,11 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	if isBW {
 		format = "image/tiff"
 	}
+	// PDF output: collect all pages and generate a single PDF document
+	if req.DocumentFormat == "application/pdf" {
+		return &pdfDocument{res: res, session: session, adapter: a, colorMode: cfg.ColorMode}, nil
+	}
+
 	doc := &scanDocument{res: res, session: session, format: format, adapter: a, colorMode: cfg.ColorMode}
 
 	// Apply filter for format conversion if needed
@@ -529,3 +534,104 @@ type scanFile struct {
 }
 
 func (f *scanFile) Format() string { return f.format }
+
+// --------------------------------------------------------------------------
+// PDF Document implementation for eSCL PDF output
+// --------------------------------------------------------------------------
+
+// pdfDocument collects all scanned pages and returns a single PDF.
+// On the first call to Next(), it pulls all pages from the scanner,
+// generates a PDF in memory, and returns it as a single DocumentFile.
+type pdfDocument struct {
+	res       abstract.Resolution
+	session   *vens.ScanSession
+	adapter   *ESCLAdapter
+	colorMode vens.ColorMode
+	done      bool
+}
+
+func (d *pdfDocument) Resolution() abstract.Resolution { return d.res }
+
+func (d *pdfDocument) Next() (abstract.DocumentFile, error) {
+	if d.done {
+		return nil, io.EOF
+	}
+	d.done = true
+
+	// Collect all pages from the scanner
+	var pages []vens.Page
+	for {
+		page, err := d.session.NextPage()
+		if err != nil {
+			if err == io.EOF {
+				break
+			}
+			d.adapter.mu.Lock()
+			d.adapter.scanning = false
+			d.adapter.adfEmpty = true
+			var scanErr *vens.ScanError
+			if errors.As(err, &scanErr) {
+				d.adapter.lastScanErr = scanErr
+			}
+			d.adapter.mu.Unlock()
+			return nil, err
+		}
+		if len(page.JPEG) == 0 {
+			continue // blank page removal
+		}
+
+		// Update image info for ScanImageInfo
+		if cfg, _, err := image.DecodeConfig(bytes.NewReader(page.JPEG)); err == nil {
+			bpl := cfg.Width * 3
+			switch d.colorMode {
+			case vens.ColorGray:
+				bpl = cfg.Width
+			case vens.ColorBW:
+				bpl = (cfg.Width + 7) / 8
+			}
+			d.adapter.mu.Lock()
+			d.adapter.pagesCompleted++
+			d.adapter.lastImageWidth = cfg.Width
+			d.adapter.lastImageHeight = cfg.Height
+			d.adapter.lastImageBPL = bpl
+			d.adapter.mu.Unlock()
+		}
+
+		pages = append(pages, page)
+	}
+
+	if len(pages) == 0 {
+		d.adapter.mu.Lock()
+		d.adapter.scanning = false
+		d.adapter.adfEmpty = true
+		d.adapter.mu.Unlock()
+		return nil, fmt.Errorf("no pages scanned")
+	}
+
+	dpi := d.res.XResolution
+	if dpi <= 0 {
+		dpi = 300
+	}
+	isBW := d.colorMode == vens.ColorBW
+
+	data, err := GeneratePDF(pages, dpi, isBW)
+	if err != nil {
+		d.adapter.mu.Lock()
+		d.adapter.scanning = false
+		d.adapter.adfEmpty = true
+		d.adapter.mu.Unlock()
+		return nil, err
+	}
+
+	slog.Info("PDF generated for eSCL", "pages", len(pages), "size", len(data))
+
+	return &scanFile{Reader: bytes.NewReader(data), format: "application/pdf"}, nil
+}
+
+func (d *pdfDocument) Close() error {
+	d.adapter.mu.Lock()
+	d.adapter.scanning = false
+	d.adapter.adfEmpty = true
+	d.adapter.mu.Unlock()
+	return d.session.Close()
+}
