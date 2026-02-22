@@ -542,19 +542,21 @@ Commands with a 6-byte CDB length. Following the SCSI 6-byte CDB format, offset 
 
 Vendor-specific SCSI command that sends all scan configuration parameters.
 
-**Request (192 bytes):**
+**Request (144 or 192 bytes):**
+
+Packet size depends on the mode. Duplex + full-auto (both color and quality auto) uses 192 bytes (Config Data 128 bytes, includes back-side parameters). Otherwise 144 bytes (Config Data 80 bytes).
 
 | Offset | Size | Field | Value |
 |--------|------|-------|-------|
-| 0 | 4 | Length | `0x000000C0` (192) |
+| 0 | 4 | Length | `0x00000090` (144) or `0x000000C0` (192) |
 | 4 | 4 | Magic | "VENS" |
 | 8 | 4 | Direction | `0x00000001` |
 | 16 | 8 | Session Token | |
 | 32 | 4 | CDB Length | `0x00000006` (6-byte CDB) |
-| 36 | 4 | Data Size | `0x000000A0` (160) |
-| 48 | 6 | SCSI CDB | `D4 00 00 00 A0 00` — Vendor-specific WRITE (Transfer Length=160) |
-| 54 | 10 | Reserved | |
-| 64+ | 128 | Config Data | See below |
+| 40 | 4 | Config Data Size | `0x00000050` (80) or `0x00000080` (128) |
+| 48 | 4 | SCSI CDB[0:4] | `D4 00 00 00` — Vendor-specific WRITE |
+| 52 | 4 | SCSI CDB[4:8] | `{50\|80} 00 00 00` — Transfer Length |
+| 64+ | 80/128 | Config Data | See below |
 
 **Config Data Byte Mapping (relative to offset 64):**
 
@@ -593,7 +595,21 @@ Front and back scan settings are stored in identical structures (front: +31~, ba
 | +57 | 1 | BW Flag | `0x01`=B&W, `0x00`=other |
 | +60 | 1 | BW Density | `6 + density` (density: -5 to +5, wire value: 1–11, 0=normal) |
 
-Back side parameters (+63~) use the same structure as front.
+**Back Side Parameters (+80~, 192-byte packets only):**
+
+Present only in duplex + full-auto mode (192-byte packets). Same fields as front side but in a compressed layout with different offsets.
+
+| Relative Offset | Size | Field | Description |
+|-----------------|------|-------|-------------|
+| +80 | 1 | Constant | `0x01` |
+| +81 | 1 | Color/BW Flag | `0x10`=color/gray/auto, `0x40`=B&W |
+| +82 | 2 | Resolution X | DPI, big-endian (0=auto) |
+| +84 | 2 | Resolution Y | DPI, big-endian (0=auto) |
+| +86 | 3 | Color Encoding | Color mode + JPEG compression (same format as front) |
+| +92 | 2 | Paper Width | 1/1200 inch, big-endian |
+| +96 | 2 | Paper Height | 1/1200 inch, big-endian |
+| +98 | 1 | Constant | `0x04` |
+| +102 | 3 | Constant | `0x010101` |
 
 **Color Encoding (+38~+40):**
 
@@ -619,13 +635,13 @@ In B&W mode, TIFF is used instead of JPEG, so byte 3 is always `0x00`.
 
 **Paper Size Constants (width × height, 1/1200 inch):**
 
-| Paper | Width | Height | mm equivalent |
-|-------|-------|--------|---------------|
-| AUTO | 0 | 0 | Auto-detect |
-| A4 | 9920 | 14032 | 210.0 × 297.0 |
-| A5 | 6992 | 9920 | 148.2 × 210.0 |
-| BUSINESS_CARD | 2552 | 4252 | 54.1 × 90.1 |
-| POSTCARD | 4724 | 6992 | 100.1 × 148.2 |
+| Paper | Width | Height | mm equivalent | Notes |
+|-------|-------|--------|---------------|-------|
+| AUTO | 10448 (0x28D0) | 17828 (0x45A4) | 221.1 × 377.4 | Max scan area |
+| A4 | 9936 (0x26D0) | 14032 (0x36D0) | 210.3 × 297.0 | |
+| A5 | 6992 (0x1B50) | 9920 (0x26C0) | 148.0 × 210.0 | |
+| BUSINESS_CARD | 10448 (0x28D0) | 4724 (0x1274) | 221.1 × 100.0 | Width same as AUTO (auto-detect) |
+| POSTCARD | 4736 (0x1280) | 6992 (0x1B50) | 100.2 × 148.0 | |
 
 **Resolution (DPI):**
 
@@ -975,7 +991,7 @@ In duplex mode, CDB[5] alternates between front and back (`0x00`=front, `0x80`=b
 
 | Offset | Size | Field | Description |
 |--------|------|-------|-------------|
-| 0 | 4 | JPEG Data Size | Byte count of the following JPEG chunk |
+| 0 | 4 | Total Length | Header (42) + JPEG data byte count |
 | 4 | 4 | Magic | "VENS" |
 | 8 | 4 | Reserved | `0x00000000` |
 | 12 | 4 | Page Type | Chunk type (see below) |
@@ -983,7 +999,7 @@ In duplex mode, CDB[5] alternates between front and back (`0x00`=front, `0x80`=b
 | 40 | 1 | Sheet Number | 0-based |
 | 41 | 1 | Side | 0=front / 1=back |
 
-The JPEG data immediately follows the header on the TCP stream.
+The JPEG data size is `Total Length - 42`. The JPEG data immediately follows the header on the TCP stream.
 
 **Page Type (chunk type):**
 
