@@ -49,7 +49,7 @@ flowchart TB
 
 - **Driver-free scanning** &mdash; Works with any eSCL/AirScan client out of the box
 - **Zero configuration** &mdash; Auto-discovers ScanSnap on the network and connects
-- **Versatile scanning** &mdash; Color / grayscale / B&W, duplex, PDF / JPEG / TIFF output, blank page removal, bleed-through reduction
+- **Versatile scanning** &mdash; Color / grayscale / B&W, duplex, PDF / JPEG / TIFF output, JPEG quality control, blank page removal, bleed-through reduction
 - **Physical button support** &mdash; Press the scanner button to trigger a scan job. Save to local folder / FTP / [Paperless-ngx] from your choice
 - **Web UI** &mdash; Configure settings and monitor status from your browser (English / Japanese)
 - **Single binary** &mdash; Built in Go, zero runtime dependencies. Ships with a systemd service unit
@@ -74,7 +74,7 @@ Download the `.deb` package from the [Releases](https://github.com/mzyy94/airsca
 curl -LO https://github.com/mzyy94/airscap/releases/latest/download/airscap_amd64.deb
 
 # Install
-sudo apt install airscap_amd64.deb
+sudo dpkg -i airscap_amd64.deb
 
 # Edit configuration
 sudo vi /etc/airscap/env
@@ -145,7 +145,7 @@ Access the built-in management interface at `http://<host>:8080/ui/`.
 
 - **Status** &mdash; Connection state, ADF paper presence, error states (paper jam, cover open, multi-feed)
 - **Device Info** &mdash; Scanner name, serial, IP, firmware revision
-- **Button Scan Settings** &mdash; Color mode, resolution, paper size, output format, duplex, blank page removal, bleed-through reduction
+- **Button Scan Settings** &mdash; Color mode, resolution, paper size, output format, JPEG quality, duplex, blank page removal, bleed-through reduction
 - **Save Destination** &mdash; Configure local folder / FTP / Paperless-ngx for button scans
 - **AirScan Settings** &mdash; Auto paper size detect, bleed-through reduction, B&W density overrides for AirScan clients
 - **eSCL Endpoint** &mdash; URL for manual eSCL client configuration

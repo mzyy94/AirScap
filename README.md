@@ -49,7 +49,7 @@ flowchart TB
 
 - **ドライバ不要** &mdash; eSCL/AirScan 対応クライアントからそのまま利用可能
 - **ゼロコンフィグ** &mdash; ネットワーク上の ScanSnap を自動検出して接続
-- **多彩なスキャン** &mdash; カラー / グレースケール / 白黒、両面、PDF / JPEG / TIFF 出力、白紙スキップ、裏写り軽減に対応
+- **多彩なスキャン** &mdash; カラー / グレースケール / 白黒、両面、PDF / JPEG / TIFF 出力、JPEG 画質調整、白紙スキップ、裏写り軽減に対応
 - **物理ボタン対応** &mdash; スキャナ本体のボタンを押してスキャンジョブを実行。保存先はローカル / FTP / [Paperless-ngx] から選択
 - **Web UI** &mdash; ブラウザから設定変更やステータス確認が可能（英語 / 日本語）
 - **シングルバイナリ** &mdash; Go言語製、ランタイム依存なし。systemd サービスユニット同梱
@@ -74,7 +74,7 @@ flowchart TB
 curl -LO https://github.com/mzyy94/airscap/releases/latest/download/airscap_amd64.deb
 
 # インストール
-sudo apt install airscap_amd64.deb
+sudo dpkg -i airscap_amd64.deb
 
 # 設定を編集
 sudo vi /etc/airscap/env
@@ -145,7 +145,7 @@ AIRSCAP_PASSWORD=0700 AIRSCAP_SCANNER_IP=192.168.1.100 ./airscap
 
 - **ステータス** &mdash; 接続状態、ADF の用紙有無、エラー状態（紙詰まり・カバーオープン・重送検知）
 - **デバイス情報** &mdash; スキャナ名、シリアル番号、IP、ファームウェアリビジョン
-- **ボタンスキャン設定** &mdash; カラーモード、解像度、用紙サイズ、出力形式、両面、白紙スキップ、裏写り軽減
+- **ボタンスキャン設定** &mdash; カラーモード、解像度、用紙サイズ、出力形式、JPEG 画質、両面、白紙スキップ、裏写り軽減
 - **保存先** &mdash; ローカルフォルダ / FTP / Paperless-ngx のボタンスキャン保存先設定
 - **AirScan 設定** &mdash; 用紙サイズ自動検出、裏写り軽減、白黒濃度の AirScan クライアント向けオーバーライド
 - **eSCL エンドポイント** &mdash; eSCL クライアント手動設定用の URL
