@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	_ "image/jpeg"
 	"io"
 	"log/slog"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/OpenPrinting/go-mfp/proto/escl"
 	"github.com/OpenPrinting/go-mfp/util/generic"
 	"github.com/OpenPrinting/go-mfp/util/uuid"
+	_ "golang.org/x/image/tiff"
 
 	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/vens"
