@@ -585,7 +585,7 @@ Front and back scan settings are stored in identical structures (front: +31~, ba
 | +33 | 1 | Color/BW Flag | `0x10`=color/gray/auto, `0x40`=B&W |
 | +34 | 2 | Resolution X | DPI, big-endian (0=auto) |
 | +36 | 2 | Resolution Y | DPI, big-endian (0=auto) |
-| +38 | 3 | Color Encoding | Color mode encoding (see below) |
+| +38 | 3 | Color Encoding | Color mode + JPEG compression (see below) |
 | +44 | 2 | Paper Width | 1/1200 inch, big-endian (0=auto) |
 | +48 | 2 | Paper Height | 1/1200 inch, big-endian (0=auto) |
 | +50 | 1 | Constant | `0x04` |
@@ -597,15 +597,25 @@ Back side parameters (+63~) use the same structure as front.
 
 **Color Encoding (+38~+40):**
 
-| Bytes | Color Mode | Notes |
-|-------|-----------|-------|
-| `05 82 0B` | Color | Standard paper |
-| `05 82 09` | Color | Postcard |
-| `02 82 0B` | Gray | Standard paper |
-| `02 82 09` | Gray | Postcard |
-| `00 03 00` | B&W | Paper size independent |
+Byte 1 is color mode, byte 2 is a fixed value, byte 3 is JPEG compression level.
 
-The third byte depends on paper size: `0x09` for postcard, `0x0B` for all others.
+| Byte | Field | Value |
+|------|-------|-------|
+| +38 | Color Mode | `0x05`=color, `0x02`=gray, `0x00`=B&W |
+| +39 | Fixed | `0x82` (color/gray), `0x03` (B&W) |
+| +40 | JPEG Compression | `0x09`–`0x0D` (color/gray), `0x00` (B&W) |
+
+JPEG compression level (byte 3):
+
+| Value | Compression Level |
+|-------|-------------------|
+| `0x09` | Highest compression (smallest file) |
+| `0x0A` | High compression |
+| `0x0B` | Standard (default) |
+| `0x0C` | High quality |
+| `0x0D` | Highest quality (largest file) |
+
+In B&W mode, TIFF is used instead of JPEG, so byte 3 is always `0x00`.
 
 **Paper Size Constants (width × height, 1/1200 inch):**
 

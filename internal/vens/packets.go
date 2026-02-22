@@ -713,13 +713,13 @@ func MarshalScanConfig(token [8]byte, cfg ScanConfig) []byte {
 	p.putU16(c+34, uint16(dpi))
 	p.putU16(c+36, uint16(dpi))
 
-	// +38-40: color encoding
+	// +38-40: color mode + JPEG compression
+	// +38: color mode (0x05=color, 0x02=gray, 0x00=bw)
+	// +39: fixed (0x82 for color/gray, 0x03 for bw)
+	// +40: JPEG compression (0x09=highest compression .. 0x0D=highest quality; 0x00 for bw)
 	colorEncTail := cfg.CompressionArg
 	if colorEncTail == 0 {
-		colorEncTail = 0x0B
-		if cfg.PaperSize == PaperPostcard {
-			colorEncTail = 0x09
-		}
+		colorEncTail = 0x0B // standard compression
 	}
 	if isGray {
 		p[c+38] = 0x02
