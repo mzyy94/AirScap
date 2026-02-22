@@ -18,8 +18,15 @@ jobs:
         with:
           go-version: "1.26.0"
 
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libjpeg-dev libpng-dev
-
       - name: Run tests
-        run: go test ./...
+        env:
+          CGO_ENABLED: "0"
+        run: |
+          go mod vendor
+          go test -mod=vendor -overlay=build/overlay.json ./...
+
+      - name: Cross-compile for arm64
+        env:
+          CGO_ENABLED: "0"
+          GOARCH: arm64
+        run: go build -mod=vendor -overlay=build/overlay.json ./...

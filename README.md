@@ -52,7 +52,7 @@ flowchart TB
 - **多彩なスキャン** &mdash; カラー / グレースケール / 白黒、両面、PDF / JPEG / TIFF 出力、JPEG 画質調整、白紙スキップ、裏写り軽減に対応
 - **物理ボタン対応** &mdash; スキャナ本体のボタンを押してスキャンジョブを実行。保存先はローカル / FTP / [Paperless-ngx] から選択
 - **Web UI** &mdash; ブラウザから設定変更やステータス確認が可能（英語 / 日本語）
-- **シングルバイナリ** &mdash; Go言語製、ランタイム依存なし。systemd サービスユニット同梱
+- **シングルバイナリ** &mdash; Pure Go、CGO 不要でクロスコンパイル可能。systemd サービスユニット同梱
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
@@ -90,16 +90,17 @@ deb パッケージにはバイナリ、systemd サービスユニット、デ�
 Go 1.25 以上が必要です。
 
 ```bash
-go install github.com/mzyy94/airscap/cmd/airscap@latest
-```
-
-またはクローンしてビルド：
-
-```bash
 git clone https://github.com/mzyy94/airscap.git
 cd airscap
-go build -o airscap ./cmd/airscap/
+go mod vendor
+CGO_ENABLED=0 go build -mod=vendor -overlay=build/overlay.json -o airscap ./cmd/airscap/
 ```
+
+> [!NOTE]
+> CGO が有効な環境（libjpeg / libpng がインストール済み）では、vendor や overlay なしでもビルドできます：
+> ```bash
+> go build -o airscap ./cmd/airscap/
+> ```
 
 ### systemd（手動セットアップ）
 
@@ -211,10 +212,3 @@ AirScap は **VENS** プロトコルを実装しています。これは富士�
 | [Bulma](https://bulma.io/) | MIT |
 | [Feather Icons](https://feathericons.com/) | MIT |
 
-リリースバイナリには以下の C ライブラリが静的リンクされています：
-
-| ライブラリ | ライセンス |
-|---|---|
-| [libjpeg-turbo](https://libjpeg-turbo.org/) | BSD / IJG |
-| [libpng](http://www.libpng.org/) | libpng License |
-| [zlib](https://zlib.net/) | zlib License |

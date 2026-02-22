@@ -27,9 +27,6 @@ jobs:
         with:
           go-version: "1.26.0"
 
-      - name: Install build dependencies
-        run: sudo apt-get update && sudo apt-get install -y libjpeg-dev libpng-dev
-
       - name: Install nfpm
         run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@latest
 
@@ -39,10 +36,11 @@ jobs:
 
       - name: Build binary
         env:
-          CGO_LDFLAGS: "-Wl,-Bstatic -ljpeg -lpng16 -lz -Wl,-Bdynamic -lm"
+          CGO_ENABLED: "0"
         run: |
+          go mod vendor
           mkdir -p dist/build
-          go build -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" -o dist/build/airscap ./cmd/airscap/
+          go build -mod=vendor -overlay=build/overlay.json -trimpath -ldflags="-s -w -X main.version=${{ steps.version.outputs.version }}" -o dist/build/airscap ./cmd/airscap/
 
       - name: Build .deb package
         env:

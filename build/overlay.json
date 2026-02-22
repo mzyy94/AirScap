@@ -1,0 +1,5 @@
+{
+  "Replace": {
+    "vendor/github.com/OpenPrinting/go-mfp/imgconv/nocgo.go": "build/_imgconv_nocgo.go"
+  }
+}

@@ -52,7 +52,7 @@ flowchart TB
 - **Versatile scanning** &mdash; Color / grayscale / B&W, duplex, PDF / JPEG / TIFF output, JPEG quality control, blank page removal, bleed-through reduction
 - **Physical button support** &mdash; Press the scanner button to trigger a scan job. Save to local folder / FTP / [Paperless-ngx] from your choice
 - **Web UI** &mdash; Configure settings and monitor status from your browser (English / Japanese)
-- **Single binary** &mdash; Built in Go, zero runtime dependencies. Ships with a systemd service unit
+- **Single binary** &mdash; Pure Go, no CGO required, cross-compilable. Ships with a systemd service unit
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
@@ -90,16 +90,17 @@ The deb package includes the binary, systemd service unit, and default configura
 Requires Go 1.25+.
 
 ```bash
-go install github.com/mzyy94/airscap/cmd/airscap@latest
-```
-
-Or clone and build:
-
-```bash
 git clone https://github.com/mzyy94/airscap.git
 cd airscap
-go build -o airscap ./cmd/airscap/
+go mod vendor
+CGO_ENABLED=0 go build -mod=vendor -overlay=build/overlay.json -o airscap ./cmd/airscap/
 ```
+
+> [!NOTE]
+> If CGO is available (libjpeg / libpng installed), you can build without vendor or overlay:
+> ```bash
+> go build -o airscap ./cmd/airscap/
+> ```
 
 ### systemd (manual)
 
@@ -211,10 +212,3 @@ This software uses the following open-source libraries:
 | [Bulma](https://bulma.io/) | MIT |
 | [Feather Icons](https://feathericons.com/) | MIT |
 
-Release binaries statically link the following C libraries:
-
-| Library | License |
-|---|---|
-| [libjpeg-turbo](https://libjpeg-turbo.org/) | BSD / IJG |
-| [libpng](http://www.libpng.org/) | libpng License |
-| [zlib](https://zlib.net/) | zlib License |
