@@ -215,13 +215,18 @@ func main() {
 					return status
 				}
 				// Fix error job state: go-mfp uses JobCanceled+AbortedBySystem,
-				// but eSCL spec requires JobAborted for fatal errors
+				// but eSCL spec requires JobAborted for fatal errors.
+				// Also inject ImagesCompleted so macOS shows scan progress.
+				pagesCompleted := adapter.PagesCompleted()
 				for i := range status.Jobs {
 					job := &status.Jobs[i]
 					if job.JobState == escl.JobCanceled &&
 						len(job.JobStateReasons) > 0 &&
 						job.JobStateReasons[0] == escl.AbortedBySystem {
 						job.JobState = escl.JobAborted
+					}
+					if job.JobState == escl.JobProcessing || job.JobState == escl.JobCompleted {
+						job.ImagesCompleted = optional.New(pagesCompleted)
 					}
 				}
 				// Query live ADF status for paper presence

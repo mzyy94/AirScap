@@ -33,6 +33,7 @@ type ESCLAdapter struct {
 	lastImageWidth   int               // actual width (pixels) of last scanned page
 	lastImageHeight  int               // actual height (pixels) of last scanned page
 	lastImageBPL     int               // actual bytes per line of last scanned page
+	pagesCompleted   int               // pages delivered via NextDocument (for ImagesCompleted)
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
@@ -188,6 +189,7 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	a.lastImageWidth = 0
 	a.lastImageHeight = 0
 	a.lastImageBPL = 0
+	a.pagesCompleted = 0
 	a.mu.Unlock()
 
 	session, err := a.scanner.StartScan(cfg)
@@ -353,6 +355,14 @@ func (a *ESCLAdapter) ImageInfo() (width, height, bytesPerLine int) {
 	return a.lastImageWidth, a.lastImageHeight, a.lastImageBPL
 }
 
+// PagesCompleted returns the number of pages delivered via NextDocument
+// in the current scan session.
+func (a *ESCLAdapter) PagesCompleted() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.pagesCompleted
+}
+
 // Close closes the scanner connection.
 func (a *ESCLAdapter) Close() error {
 	a.scanner.Disconnect()
@@ -485,6 +495,8 @@ func (d *scanDocument) Next() (abstract.DocumentFile, error) {
 	if cfg, _, err := image.DecodeConfig(bytes.NewReader(page.JPEG)); err == nil {
 		w, h = cfg.Width, cfg.Height
 	}
+	d.adapter.mu.Lock()
+	d.adapter.pagesCompleted++
 	if w > 0 {
 		bpl := w * 3 // color (RGB)
 		switch d.colorMode {
@@ -493,12 +505,11 @@ func (d *scanDocument) Next() (abstract.DocumentFile, error) {
 		case vens.ColorBW:
 			bpl = (w + 7) / 8
 		}
-		d.adapter.mu.Lock()
 		d.adapter.lastImageWidth = w
 		d.adapter.lastImageHeight = h
 		d.adapter.lastImageBPL = bpl
-		d.adapter.mu.Unlock()
 	}
+	d.adapter.mu.Unlock()
 
 	return &scanFile{Reader: bytes.NewReader(page.JPEG), format: d.format}, nil
 }
