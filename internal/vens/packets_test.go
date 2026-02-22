@@ -2,6 +2,7 @@ package vens
 
 import (
 	"encoding/binary"
+	"strings"
 	"testing"
 )
 
@@ -1069,5 +1070,585 @@ func TestMacToString(t *testing.T) {
 	want := "aa:bb:cc:dd:ee:ff"
 	if got != want {
 		t.Errorf("macToString = %q, want %q", got, want)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Pcap-based test helpers — raw packet data from real ScanSnap iX500 captures
+// --------------------------------------------------------------------------
+//
+// All helpers construct byte slices matching actual captured packets.
+// Sensitive data (IP, MAC, serial) is replaced with dummy values:
+//   Scanner IP: 192.168.5.3       Client IP: 192.168.5.10
+//   MAC: aa:bb:cc:dd:ee:ff        Serial: iX500-XX0YY00000
+//   Token: {0x01,0x02,0x03,0x04,0x05,0x06,0x00,0x00}
+
+// pcapToken is the dummy token used in pcap-based test fixtures.
+var pcapToken = [8]byte{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x00, 0x00}
+
+// comparePacketRegion compares byte slices in a region, reporting hex diffs.
+func comparePacketRegion(t *testing.T, got, want []byte, start, end int, name string) {
+	t.Helper()
+	mismatches := 0
+	for i := start; i < end && i < len(got) && i < len(want); i++ {
+		if got[i] != want[i] {
+			if mismatches < 20 {
+				t.Errorf("%s: offset %d (0x%02x): got 0x%02x, want 0x%02x", name, i, i, got[i], want[i])
+			}
+			mismatches++
+		}
+	}
+	if mismatches > 20 {
+		t.Errorf("%s: %d more mismatches not shown", name, mismatches-20)
+	}
+}
+
+// buildPcapBroadcastAdvertisement constructs a 48-byte scanner broadcast
+// matching a capture from scansnap-scan.pcapng (UDP:53220).
+// Anonymized: scanner IP at [20:24], device ID at [24:30].
+func buildPcapBroadcastAdvertisement() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x30, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x21, 0x00, 0x00, 0x00, 0x00,
+		0x01, 0x00, 0x00, 0x00, 0xc0, 0xa8, 0x05, 0x03, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapDeviceInfoResponse constructs a 132-byte device info response
+// matching scansnap-setup.pcapng pkt#4 (UDP 52217→55264).
+// Anonymized: DeviceIP [16:20], MAC [28:34], Serial [40:56].
+// Original: IP=192.168.0.176, MAC=84:25:3f:0c:a1:7f, Serial=iX500-AK7CC00700.
+func buildPcapDeviceInfoResponse() []byte {
+	return []byte{
+		// [0:16] row 0 — Magic, Paired=0, padding(00 00), version(0x0004), sub-type(0x0030), bcast mask
+		0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x04, 0x00, 0x30, 0xff, 0xff, 0xff, 0xff,
+		// [16:32] row 1 — DeviceIP(anon), pad, DataPort=53218, pad, ControlPort=53219, MAC(anon)
+		0xc0, 0xa8, 0x05, 0x03, 0x00, 0x00, 0xcf, 0xe2, 0x00, 0x00, 0xcf, 0xe3, 0xaa, 0xbb, 0xcc, 0xdd,
+		// [32:48] row 2 — MAC(anon cont), pad, State=1, Serial(anon) "iX500-XX0YY00000"
+		0xee, 0xff, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x69, 0x58, 0x35, 0x30, 0x30, 0x2d, 0x58, 0x58,
+		// [48:64] row 3 — Serial(anon cont) + null padding
+		0x30, 0x59, 0x59, 0x30, 0x30, 0x30, 0x30, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [64:80] row 4
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [80:96] row 5
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [96:112] row 6 — zero padding, then Name "ScanSnap iX500  "
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x53, 0x63, 0x61, 0x6e, 0x53, 0x6e, 0x61, 0x70,
+		// [112:128] row 7 — Name cont " iX500  ", ClientIP=0.0.0.0(not paired), trailing
+		0x20, 0x69, 0x58, 0x35, 0x30, 0x30, 0x20, 0x20, 0x00, 0x00, 0x00, 0x00, 0x00, 0x22, 0x5f, 0xa6,
+		// [128:132] row 8 — trailing
+		0xb5, 0x73, 0x00, 0x00,
+	}
+}
+
+// buildPcapEventNotification constructs a 48-byte event notification
+// matching a capture from scansnap-scan.pcapng (UDP:55265).
+// EventType=1 (button press), EventData=0x02000000.
+func buildPcapEventNotification() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x30, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapWelcomePacket constructs a 16-byte welcome packet
+// matching a capture from scansnap-scan.pcapng (TCP:53219).
+func buildPcapWelcomePacket() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x10, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapWifiStatusResponse constructs a 32-byte WiFi status response
+// matching a capture from scansnap-setting.pcapng (TCP:53219).
+// State=3 (strong signal).
+func buildPcapWifiStatusResponse() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x20, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapReserveResponseRejected constructs a 20-byte reserve response
+// matching a capture from scansnap-pairing.pcapng (TCP:53219).
+// Status=0xFFFFFFFD (rejected — scanner already paired to another client).
+func buildPcapReserveResponseRejected() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x14, 0x56, 0x45, 0x4e, 0x53, 0xff, 0xff, 0xff, 0xfd, 0x00, 0x04, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapDataDeviceInfoResponse constructs a 136-byte SCSI INQUIRY response
+// matching a capture from scansnap-scan.pcapng (TCP:53218).
+// Contains full VENS response header + device identity.
+func buildPcapDataDeviceInfoResponse() []byte {
+	return []byte{
+		// [0:40] VENS response header
+		0x00, 0x00, 0x00, 0x88, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [40:48] SCSI INQUIRY header
+		0x06, 0x00, 0x92, 0x02, 0x5b, 0x00, 0x00, 0x10,
+		// [48:81] Device name: "FUJITSU ScanSnap iX500  0M00"
+		0x46, 0x55, 0x4a, 0x49, 0x54, 0x53, 0x55, 0x20, // "FUJITSU "
+		0x53, 0x63, 0x61, 0x6e, 0x53, 0x6e, 0x61, 0x70, // "ScanSnap"
+		0x20, 0x69, 0x58, 0x35, 0x30, 0x30, 0x20, 0x20, // " iX500  "
+		0x30, 0x4d, 0x30, 0x30, 0x00, // "0M00\0"
+		// [81:136] remaining bytes from capture
+		0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapPageHeaderFinal constructs a 42-byte final page header
+// matching a capture from scan-normal-bw.pcapng (TCP:53218).
+// TotalLength=43713, PageType=2 (final), Sheet=0, Side=0.
+func buildPcapPageHeaderFinal() []byte {
+	return []byte{
+		0x00, 0x00, 0xaa, 0xc1, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapSenseNoError constructs a 58-byte REQUEST SENSE response
+// matching a capture from scansnap-scan.pcapng (TCP:53218).
+// SenseKey=0x00 (NO SENSE) — scan page OK.
+func buildPcapSenseNoError() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x3a, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x00, 0x60, 0x00, 0x03, 0x6a, 0x19, 0x0a,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapSenseScanComplete constructs a 58-byte REQUEST SENSE response
+// matching a capture from scansnap-scan.pcapng (TCP:53218).
+// SenseKey=0x03 (MEDIUM ERROR), ASC=0x80, ASCQ=0x03 (scan complete — not an error).
+func buildPcapSenseScanComplete() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x3a, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x0a,
+		0x00, 0x00, 0x00, 0x00, 0x80, 0x03, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapSenseIllegalRequest constructs a 58-byte REQUEST SENSE response
+// matching a capture from scan-2paper-second-failed.pcapng (TCP:53218).
+// SenseKey=0x05 (ILLEGAL REQUEST), ASC=0x24, ASCQ=0x00.
+func buildPcapSenseIllegalRequest() []byte {
+	return []byte{
+		0x00, 0x00, 0x00, 0x3a, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x00, 0x05, 0x00, 0x00, 0x00, 0x00, 0x0a,
+		0x00, 0x00, 0x00, 0x00, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapScanConfigBWDuplexAutoQuality constructs a 144-byte D4 SET SCAN CONFIG
+// matching scan-normal-bw.pcapng config #1 (TCP:53218).
+// Config: BW, Duplex, QualityAuto, MultiFeed=ON, BlankPageRemoval=ON,
+// BleedThrough=OFF, PaperAuto, BWDensity=0.
+// Token replaced with pcapToken.
+func buildPcapScanConfigBWDuplexAutoQuality() []byte {
+	return []byte{
+		// [0:4] Size=144
+		0x00, 0x00, 0x00, 0x90,
+		// [4:8] Magic
+		0x56, 0x45, 0x4e, 0x53,
+		// [8:12] Direction=1
+		0x00, 0x00, 0x00, 0x01,
+		// [12:16] padding
+		0x00, 0x00, 0x00, 0x00,
+		// [16:24] Token (anonymized)
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x00, 0x00,
+		// [24:32] padding
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [32:36] Command=CmdGetSet(0x06)
+		0x00, 0x00, 0x00, 0x06,
+		// [36:40] padding
+		0x00, 0x00, 0x00, 0x00,
+		// [40:44] ConfigSize=0x50 (80)
+		0x00, 0x00, 0x00, 0x50,
+		// [44:48] padding
+		0x00, 0x00, 0x00, 0x00,
+		// [48:52] CDB opcode D4
+		0xd4, 0x00, 0x00, 0x00,
+		// [52:56] ConfigSize in CDB
+		0x50, 0x00, 0x00, 0x00,
+		// [56:64] padding
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [64:144] Config data (80 bytes)
+		// +0    +1(duplex) +2(auto) +3(auto) +4(mfeed) +5(auto) +6(mfeed) +7(autoCQ)
+		0x00, 0x03, 0x01, 0x01, 0xd0, 0x01, 0xc1, 0x80,
+		// +8(blank) +9(const) +10(autoQ) +11(bleed) +12(const) +13..+15
+		0xe0, 0xc8, 0xa0, 0x80, 0x80, 0x00, 0x00, 0x00,
+		// +16..+30
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// +31(0x30) +32 +33(BW=0x40)
+		0x30, 0x00, 0x40,
+		// +34-35(DPI X=0) +36-37(DPI Y=0)
+		0x00, 0x00, 0x00, 0x00,
+		// +38(colorMode=BW) +39(fixed=0x03) +40(compression=0x00 for BW)
+		0x00, 0x03, 0x00,
+		// +41..+43
+		0x00, 0x00, 0x00,
+		// +44-45(width=0x28D0) +46-47
+		0x28, 0xd0, 0x00, 0x00,
+		// +48-49(height=0x45A4) +50(const=0x04)
+		0x45, 0xa4, 0x04,
+		// +51..+53
+		0x00, 0x00, 0x00,
+		// +54(0x01) +55(0x01) +56(0x01) +57(BW flag=0x01)
+		0x01, 0x01, 0x01, 0x01,
+		// +58-59
+		0x00, 0x00,
+		// +60(BWDensity=6 → density=0)
+		0x06,
+		// +61..+79 (zeros)
+		0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// buildPcapScanConfigMultiFeedOff constructs a 144-byte D4 SET SCAN CONFIG
+// matching multifeed-on-off.pcapng config #1 (TCP:53218).
+// Config: BW, Duplex, QualityAuto, MultiFeed=OFF, BlankPageRemoval=ON,
+// BleedThrough=ON, PaperAuto, BWDensity=0.
+// Token replaced with pcapToken.
+func buildPcapScanConfigMultiFeedOff() []byte {
+	return []byte{
+		// [0:36] Data header
+		0x00, 0x00, 0x00, 0x90, 0x56, 0x45, 0x4e, 0x53, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00,
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x06,
+		// [36:64] GET_SET param header
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x50, 0x00, 0x00, 0x00, 0x00,
+		0xd4, 0x00, 0x00, 0x00, 0x50, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		// [64:144] Config data (80 bytes) — MultiFeed=OFF
+		0x00, 0x03, 0x01, 0x01, 0x80, 0x01, 0xc0, 0x80, 0xe0, 0xc8, 0xa0, 0xc0, 0x80, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x30,
+		0x00, 0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00, 0x00, 0x00, 0x00, 0x28, 0xd0, 0x00, 0x00,
+		0x45, 0xa4, 0x04, 0x00, 0x00, 0x00, 0x01, 0x01, 0x01, 0x01, 0x00, 0x00, 0x06, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	}
+}
+
+// --------------------------------------------------------------------------
+// Pcap-based parse tests
+// --------------------------------------------------------------------------
+
+func TestParseBroadcastAdvertisement_Pcap(t *testing.T) {
+	data := buildPcapBroadcastAdvertisement()
+	ip, err := ParseBroadcastAdvertisement(data)
+	if err != nil {
+		t.Fatalf("ParseBroadcastAdvertisement failed: %v", err)
+	}
+	if ip != "192.168.5.3" {
+		t.Errorf("deviceIP = %q, want %q", ip, "192.168.5.3")
+	}
+	// Verify full packet structure
+	if binary.BigEndian.Uint32(data[0:4]) != 0x30 {
+		t.Error("packet length field != 0x30")
+	}
+	if binary.BigEndian.Uint32(data[8:12]) != CmdBroadcast {
+		t.Errorf("command = 0x%X, want 0x%X", binary.BigEndian.Uint32(data[8:12]), CmdBroadcast)
+	}
+}
+
+func TestParseDeviceInfo_Pcap(t *testing.T) {
+	data := buildPcapDeviceInfoResponse()
+	info, err := ParseDeviceInfo(data)
+	if err != nil {
+		t.Fatalf("ParseDeviceInfo failed: %v", err)
+	}
+	if info.Paired {
+		t.Error("Paired = true, want false")
+	}
+	if info.DeviceIP != "192.168.5.3" {
+		t.Errorf("DeviceIP = %q, want %q", info.DeviceIP, "192.168.5.3")
+	}
+	if info.DataPort != DefaultDataPort {
+		t.Errorf("DataPort = %d, want %d", info.DataPort, DefaultDataPort)
+	}
+	if info.ControlPort != DefaultControlPort {
+		t.Errorf("ControlPort = %d, want %d", info.ControlPort, DefaultControlPort)
+	}
+	if info.MAC != "aa:bb:cc:dd:ee:ff" {
+		t.Errorf("MAC = %q, want %q", info.MAC, "aa:bb:cc:dd:ee:ff")
+	}
+	if info.Serial != "iX500-XX0YY00000" {
+		t.Errorf("Serial = %q, want %q", info.Serial, "iX500-XX0YY00000")
+	}
+	if strings.TrimSpace(info.Name) != "ScanSnap iX500" {
+		t.Errorf("Name = %q, want %q (trimmed)", info.Name, "ScanSnap iX500")
+	}
+	if info.State != 1 {
+		t.Errorf("State = %d, want 1", info.State)
+	}
+	if info.ClientIP != "" {
+		t.Errorf("ClientIP = %q, want empty (not paired)", info.ClientIP)
+	}
+	// Verify protocol version from wire bytes [8:10]
+	if data[8] != 0x00 || data[9] != 0x04 {
+		t.Errorf("protocol version = 0x%02X%02X, want 0x0004", data[8], data[9])
+	}
+}
+
+func TestParseEventNotification_Pcap(t *testing.T) {
+	data := buildPcapEventNotification()
+	evType, evData, err := ParseEventNotification(data)
+	if err != nil {
+		t.Fatalf("ParseEventNotification failed: %v", err)
+	}
+	if evType != 1 {
+		t.Errorf("EventType = %d, want 1 (button press)", evType)
+	}
+	if evData != 0x02000000 {
+		t.Errorf("EventData = 0x%08X, want 0x02000000", evData)
+	}
+}
+
+func TestValidateWelcome_Pcap(t *testing.T) {
+	data := buildPcapWelcomePacket()
+	if err := ValidateWelcome(data); err != nil {
+		t.Errorf("ValidateWelcome failed: %v", err)
+	}
+	// Verify size field
+	if binary.BigEndian.Uint32(data[0:4]) != 0x10 {
+		t.Errorf("welcome size = 0x%X, want 0x10", binary.BigEndian.Uint32(data[0:4]))
+	}
+}
+
+func TestParseGetWifiStatusResponse_Pcap(t *testing.T) {
+	data := buildPcapWifiStatusResponse()
+	state, err := ParseGetWifiStatusResponse(data)
+	if err != nil {
+		t.Fatalf("ParseGetWifiStatusResponse failed: %v", err)
+	}
+	if state != 3 {
+		t.Errorf("state = %d, want 3 (strong)", state)
+	}
+	// Verify full packet: size field, magic
+	if binary.BigEndian.Uint32(data[0:4]) != 0x20 {
+		t.Errorf("size = 0x%X, want 0x20", binary.BigEndian.Uint32(data[0:4]))
+	}
+	if [4]byte(data[4:8]) != Magic {
+		t.Error("magic mismatch")
+	}
+}
+
+func TestParseReserveResponse_PcapRejected(t *testing.T) {
+	data := buildPcapReserveResponseRejected()
+	status, err := ParseReserveResponse(data)
+	if err != nil {
+		t.Fatalf("ParseReserveResponse failed: %v", err)
+	}
+	if status != 0xFFFFFFFD {
+		t.Errorf("status = 0x%08X, want 0xFFFFFFFD", status)
+	}
+	// Verify protocol version at offset 12
+	ver := binary.BigEndian.Uint32(data[12:16])
+	if ver != 0x00040000 {
+		t.Errorf("protocol version = 0x%08X, want 0x00040000", ver)
+	}
+}
+
+func TestParseDataDeviceInfo_Pcap(t *testing.T) {
+	data := buildPcapDataDeviceInfoResponse()
+	info, err := ParseDataDeviceInfo(data)
+	if err != nil {
+		t.Fatalf("ParseDataDeviceInfo failed: %v", err)
+	}
+	if info.DeviceName != "FUJITSU ScanSnap iX500" {
+		t.Errorf("DeviceName = %q, want %q", info.DeviceName, "FUJITSU ScanSnap iX500")
+	}
+	if info.FirmwareRevision != "0M00" {
+		t.Errorf("FirmwareRevision = %q, want %q", info.FirmwareRevision, "0M00")
+	}
+	// Verify VENS header
+	if binary.BigEndian.Uint32(data[0:4]) != 0x88 {
+		t.Errorf("size = 0x%X, want 0x88 (136)", binary.BigEndian.Uint32(data[0:4]))
+	}
+	if [4]byte(data[4:8]) != Magic {
+		t.Error("magic mismatch")
+	}
+	// Verify SCSI device type
+	if data[40] != 0x06 {
+		t.Errorf("device type = 0x%02X, want 0x06 (scanner)", data[40])
+	}
+}
+
+func TestParsePageHeader_PcapFinal(t *testing.T) {
+	data := buildPcapPageHeaderFinal()
+	hdr, err := ParsePageHeader(data)
+	if err != nil {
+		t.Fatalf("ParsePageHeader failed: %v", err)
+	}
+	if hdr.TotalLength != 43713 {
+		t.Errorf("TotalLength = %d, want 43713", hdr.TotalLength)
+	}
+	if hdr.PageType != PageTypeFinal {
+		t.Errorf("PageType = %d, want %d (final)", hdr.PageType, PageTypeFinal)
+	}
+	if hdr.Sheet != 0 {
+		t.Errorf("Sheet = %d, want 0", hdr.Sheet)
+	}
+	if hdr.Side != 0 {
+		t.Errorf("Side = %d, want 0", hdr.Side)
+	}
+	// JPEG size = TotalLength - 42 = 43671
+	if hdr.JPEGSize() != 43671 {
+		t.Errorf("JPEGSize() = %d, want 43671", hdr.JPEGSize())
+	}
+}
+
+func TestParseSenseError_PcapNoError(t *testing.T) {
+	resp := buildPcapSenseNoError()
+	err := parseSenseError(resp)
+	if err != nil {
+		t.Errorf("expected nil for NO SENSE, got %v", err)
+	}
+	// Verify sense key is 0 (bit masked)
+	senseKey := resp[SenseDataOffset+2] & 0x0F
+	if senseKey != SenseKeyNoSense {
+		t.Errorf("senseKey = 0x%02X, want 0x00", senseKey)
+	}
+}
+
+func TestParseSenseError_PcapScanComplete(t *testing.T) {
+	resp := buildPcapSenseScanComplete()
+	err := parseSenseError(resp)
+	if err != nil {
+		t.Errorf("expected nil for scan complete, got %v", err)
+	}
+	// Verify raw sense fields
+	senseKey := resp[SenseDataOffset+2] & 0x0F
+	asc := resp[SenseDataOffset+12]
+	ascq := resp[SenseDataOffset+13]
+	if senseKey != SenseKeyMediumError {
+		t.Errorf("senseKey = 0x%02X, want 0x03", senseKey)
+	}
+	if asc != VendorASC {
+		t.Errorf("ASC = 0x%02X, want 0x80", asc)
+	}
+	if ascq != ASCQScanComplete {
+		t.Errorf("ASCQ = 0x%02X, want 0x03", ascq)
+	}
+}
+
+func TestParseSenseError_PcapIllegalRequest(t *testing.T) {
+	resp := buildPcapSenseIllegalRequest()
+	err := parseSenseError(resp)
+	if err == nil {
+		t.Fatal("expected error for ILLEGAL REQUEST, got nil")
+	}
+	if err.Kind != ScanErrGeneric {
+		t.Errorf("Kind = %d, want %d (ScanErrGeneric)", err.Kind, ScanErrGeneric)
+	}
+}
+
+// --------------------------------------------------------------------------
+// Pcap-based round-trip (marshal) tests
+// --------------------------------------------------------------------------
+
+func TestMarshalScanConfig_PcapRoundTrip_BWSimplex(t *testing.T) {
+	// BW + QualityAuto + Duplex + MultiFeed + BlankPageRemoval, no bleed-through
+	// Matches scan-normal-bw.pcapng config #1 (144B)
+	cfg := ScanConfig{
+		ColorMode:        ColorBW,
+		Quality:          QualityAuto,
+		Duplex:           true,
+		MultiFeed:        true,
+		BlankPageRemoval: true,
+		BleedThrough:     false,
+		PaperSize:        PaperAuto,
+		BWDensity:        0,
+	}
+	got := MarshalScanConfig(pcapToken, cfg)
+	want := buildPcapScanConfigBWDuplexAutoQuality()
+
+	if len(got) != len(want) {
+		t.Fatalf("packet length = %d, want %d", len(got), len(want))
+	}
+
+	// Compare entire packet (token is the same since we use pcapToken)
+	comparePacketRegion(t, got, want, 0, len(got), "full packet")
+}
+
+func TestMarshalScanConfig_PcapRoundTrip_MultiFeedOff(t *testing.T) {
+	// BW + QualityAuto + Duplex + MultiFeed=OFF + BlankPageRemoval + BleedThrough=ON
+	// Matches multifeed-on-off.pcapng config #1 (144B)
+	cfg := ScanConfig{
+		ColorMode:        ColorBW,
+		Quality:          QualityAuto,
+		Duplex:           true,
+		MultiFeed:        false,
+		BlankPageRemoval: true,
+		BleedThrough:     true,
+		PaperSize:        PaperAuto,
+		BWDensity:        0,
+	}
+	got := MarshalScanConfig(pcapToken, cfg)
+	want := buildPcapScanConfigMultiFeedOff()
+
+	if len(got) != len(want) {
+		t.Fatalf("packet length = %d, want %d", len(got), len(want))
+	}
+
+	comparePacketRegion(t, got, want, 0, len(got), "full packet")
+}
+
+func TestMarshalGetScanParams_PcapCDB(t *testing.T) {
+	// Verify the SCSI CDB region matches all captures:
+	// CDB = {0x12, 0x01, 0xF0, 0x00, 0x90, 0x00} at offset 48-53
+	pkt := MarshalGetScanParams(pcapToken)
+	if len(pkt) != 64 {
+		t.Fatalf("length = %d, want 64", len(pkt))
+	}
+	wantCDB := []byte{0x12, 0x01, 0xF0, 0x00}
+	gotCDB := pkt[48:52]
+	for i := range wantCDB {
+		if gotCDB[i] != wantCDB[i] {
+			t.Errorf("CDB[%d] = 0x%02X, want 0x%02X", i, gotCDB[i], wantCDB[i])
+		}
+	}
+	// Allocation length = 0x90 at CDB[4]
+	if pkt[52] != 0x90 {
+		t.Errorf("allocation length = 0x%02X, want 0x90", pkt[52])
+	}
+}
+
+func TestMarshalPageTransfer_PcapCDB(t *testing.T) {
+	// Verify CDB layout matches captures:
+	// READ(10), DataType=0x00, TransferMode=0x02, TransferLen=0x040000
+	pkt := MarshalPageTransfer(pcapToken, 0, 0, false)
+	if len(pkt) != 64 {
+		t.Fatalf("length = %d, want 64", len(pkt))
+	}
+	cdb := pkt[48:60]
+	// Opcode
+	if cdb[0] != SCSIOpcodeRead10 {
+		t.Errorf("CDB[0] = 0x%02X, want 0x%02X (READ10)", cdb[0], SCSIOpcodeRead10)
+	}
+	// DataType=IMAGE
+	if cdb[2] != 0x00 {
+		t.Errorf("CDB[2] DataType = 0x%02X, want 0x00 (IMAGE)", cdb[2])
+	}
+	// TransferMode=BLOCK_UNTIL_AVAIL
+	if cdb[3] != 0x02 {
+		t.Errorf("CDB[3] TransferMode = 0x%02X, want 0x02", cdb[3])
+	}
+	// Transfer length = 0x040000 (256KB) in big-endian at CDB[6:9]
+	tlen := uint32(cdb[6])<<16 | uint32(cdb[7])<<8 | uint32(cdb[8])
+	if tlen != 0x040000 {
+		t.Errorf("transfer length = 0x%06X, want 0x040000", tlen)
 	}
 }
