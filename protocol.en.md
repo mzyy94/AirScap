@@ -340,8 +340,17 @@ Used for connection health checks and post-scan status retrieval.
 | 4 | 4 | Magic | "VENS" |
 | 8 | 4 | Status | |
 | 12 | 4 | Reserved | |
-| 16 | 4 | State | `0x00000003` = connected |
+| 16 | 4 | State | Wi-Fi connection state (see table below) |
 | 20 | 12 | Reserved | |
+
+**State values:**
+
+| Value | Meaning |
+|-------|---------|
+| `0x00000000` | Disconnected |
+| `0x00000001` | Connected (signal: weak) |
+| `0x00000002` | Connected (signal: normal) |
+| `0x00000003` | Connected (signal: strong) |
 
 ### 4.5 Pairing Protocol
 

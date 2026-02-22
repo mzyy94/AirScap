@@ -13,6 +13,7 @@ const MESSAGES = {
   connection:       { en: 'Connection',   ja: '接続' },
   paperLoaded:      { en: 'Paper loaded', ja: '用紙あり' },
   noPaper:          { en: 'No paper',     ja: '用紙なし' },
+  wifiSignal:       { en: 'Wi-Fi Signal', ja: 'Wi-Fi 強度' },
   lastUpdated:      { en: 'Last updated', ja: '最終更新' },
   adfErr_jam:       { en: 'Paper jam',    ja: '紙詰まり' },
   adfErr_hatchOpen: { en: 'Cover open',   ja: 'カバーオープン' },
@@ -23,6 +24,11 @@ const MESSAGES = {
   serial:           { en: 'Serial',       ja: 'シリアル' },
   ipAddress:        { en: 'IP Address',   ja: 'IP アドレス' },
   fwRevision:       { en: 'F/W Revision', ja: 'F/W リビジョン' },
+  wifi_strong:      { en: 'Strong',       ja: '強い' },
+  wifi_normal:      { en: 'Normal',       ja: '普通' },
+  wifi_weak:        { en: 'Weak',         ja: '弱い' },
+  wifi_disconnected:{ en: 'Disconnected', ja: '未接続' },
+  wifi_unknown:     { en: 'Unknown',      ja: '不明' },
 
   // Capabilities
   resolution:       { en: 'Resolution',    ja: '解像度' },

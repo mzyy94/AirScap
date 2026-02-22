@@ -75,6 +75,12 @@
               <span x-show="status?.adf?.error" class="tag is-danger is-rounded" x-text="t('adfErr_' + (status?.adf?.error || ''))"></span>
             </div>
           </div>
+          <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center" x-show="status?.online">
+            <span class="is-size-7 has-text-grey" x-text="t('wifiSignal')"></span>
+            <span class="tag is-rounded is-small"
+              :class="{'is-info': status?.device?.wifiState === 'strong', 'is-warning': status?.device?.wifiState === 'normal', 'is-danger': status?.device?.wifiState === 'weak', 'is-light': status?.device?.wifiState === 'disconnected' || status?.device?.wifiState === 'unknown'}"
+              x-text="t('wifi_' + (status?.device?.wifiState || 'unknown'))"></span>
+          </div>
           <div class="level media py-2 my-0 is-flex-direction-row is-align-items-center">
             <span class="is-size-7 has-text-grey" x-text="t('lastUpdated')"></span>
             <span class="is-size-7 has-text-grey-light" x-text="relativeTime(status?.updatedAt, tick)"></span>

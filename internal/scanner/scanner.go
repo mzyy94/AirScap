@@ -28,6 +28,7 @@ type Scanner struct {
 	deviceName        string // full device name with manufacturer from TCP GET_SET sub=0x12
 	firmwareRevision  string // firmware revision from device name suffix (e.g. "0M00")
 	scanParams        *vens.ScanParams // capabilities from INQUIRY VPD 0xF0
+	wifiState         uint32           // last GET_WIFI_STATUS state (signal strength, 0 to 3)
 
 	reconnCancel context.CancelFunc
 	reconnDone   chan struct{}
@@ -135,8 +136,12 @@ func (s *Scanner) Connect(ctx context.Context) error {
 
 	// Step 5: Status check (between data channel operations, matching Python flow)
 	slog.Debug("status check...")
-	if _, err := s.control.CheckStatus(s.token); err != nil {
+	if wifiState, err := s.control.CheckStatus(s.token); err != nil {
 		slog.Warn("status check failed", "err", err)
+	} else {
+		s.mu.Lock()
+		s.wifiState = wifiState
+		s.mu.Unlock()
 	}
 
 	scanParams, err := dataCh.GetScanParams()
@@ -276,10 +281,15 @@ func (s *Scanner) healthCheck() {
 		s.markOffline()
 		return
 	}
-	if _, err := ctrl.CheckStatus(token); err != nil {
+	state, err := ctrl.CheckStatus(token)
+	if err != nil {
 		slog.Warn("health check failed", "err", err)
 		s.markOffline()
+		return
 	}
+	s.mu.Lock()
+	s.wifiState = state
+	s.mu.Unlock()
 }
 
 func (s *Scanner) tryReconnect(ctx context.Context) {
@@ -343,6 +353,13 @@ func (s *Scanner) ScanParams() *vens.ScanParams {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.scanParams
+}
+
+// WifiState returns the last known WiFi state from GET_WIFI_STATUS (signal strength, 0 to 3).
+func (s *Scanner) WifiState() uint32 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.wifiState
 }
 
 // MakeAndModel returns the device name (already stripped of firmware revision by ParseDataDeviceInfo).

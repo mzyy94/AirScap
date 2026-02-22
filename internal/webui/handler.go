@@ -64,6 +64,7 @@ type deviceInfo struct {
 	Serial           string `json:"serial"`
 	Host             string `json:"host"`
 	FirmwareRevision string `json:"firmwareRevision,omitempty"`
+	WifiState        string `json:"wifiState"` // "strong", "normal", "weak", "disconnected", or "unknown"
 }
 
 type capsInfo struct {
@@ -88,6 +89,7 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 			Serial:           h.sc.Serial(),
 			Host:             h.sc.Host(),
 			FirmwareRevision: h.sc.FirmwareRevision(),
+			WifiState:        wifiStateString(h.sc.WifiState()),
 		},
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
 		Version:   h.version,
@@ -204,6 +206,21 @@ func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]any{
 		"pages": dataURLs,
 	})
+}
+
+func wifiStateString(state uint32) string {
+	switch state {
+	case 0:
+		return "disconnected"
+	case 1:
+		return "weak"
+	case 2:
+		return "normal"
+	case 3:
+		return "strong"
+	default:
+		return "unknown"
+	}
 }
 
 func writeJSONError(w http.ResponseWriter, status int, msg string) {
