@@ -179,6 +179,24 @@ func main() {
 		Scanner:  adapter,
 		BasePath: "",
 		Hooks: escl.ServerHooks{
+			OnHTTPRequest: func(query *transport.ServerQuery) {
+				p := query.RequestURL().Path
+				if query.RequestMethod() == "GET" && strings.HasSuffix(p, "/ScanImageInfo") {
+					w, h, bpl := adapter.ImageInfo()
+					if w == 0 {
+						query.Reject(http.StatusServiceUnavailable, nil)
+						return
+					}
+					jobURI := p[:len(p)-len("/ScanImageInfo")]
+					info := escl.ScanImageInfo{
+						JobURI:             jobURI,
+						ActualWidth:        w,
+						ActualHeight:       h,
+						ActualBytesPerLine: bpl,
+					}
+					query.SendXML(http.StatusOK, escl.NsMap, info.ToXML())
+				}
+			},
 			OnScannerCapabilitiesResponse: func(_ *transport.ServerQuery, caps *escl.ScannerCapabilities) *escl.ScannerCapabilities {
 				if caps.ADF != nil {
 					caps.ADF.ADFOptions = append(caps.ADF.ADFOptions, escl.DetectPaperLoaded)

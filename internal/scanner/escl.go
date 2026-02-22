@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"log/slog"
 	"sync"
@@ -29,6 +30,9 @@ type ESCLAdapter struct {
 	blankPageRemoval bool              // controlled by eSCL BlankPageDetectionAndRemoval
 	lastScanErr      *vens.ScanError   // last scan error (for ADF state reporting)
 	scanning         bool              // true while a scan session is active
+	lastImageWidth   int               // actual width (pixels) of last scanned page
+	lastImageHeight  int               // actual height (pixels) of last scanned page
+	lastImageBPL     int               // actual bytes per line of last scanned page
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
@@ -181,6 +185,9 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	a.mu.Lock()
 	a.lastScanErr = nil // Clear previous error on new scan attempt
 	a.scanning = true
+	a.lastImageWidth = 0
+	a.lastImageHeight = 0
+	a.lastImageBPL = 0
 	a.mu.Unlock()
 
 	session, err := a.scanner.StartScan(cfg)
@@ -212,7 +219,7 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	if isBW {
 		format = "image/tiff"
 	}
-	doc := &scanDocument{res: res, session: session, format: format, adapter: a}
+	doc := &scanDocument{res: res, session: session, format: format, adapter: a, colorMode: cfg.ColorMode}
 
 	// Apply filter for format conversion if needed
 	if req.DocumentFormat != "" && req.DocumentFormat != format {
@@ -338,6 +345,14 @@ func (a *ESCLAdapter) LastErrorKind() vens.ScanErrorKind {
 	return a.lastScanErr.Kind
 }
 
+// ImageInfo returns the actual image dimensions of the last scanned page.
+// Returns (0, 0, 0) if no page has been scanned yet.
+func (a *ESCLAdapter) ImageInfo() (width, height, bytesPerLine int) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.lastImageWidth, a.lastImageHeight, a.lastImageBPL
+}
+
 // Close closes the scanner connection.
 func (a *ESCLAdapter) Close() error {
 	a.scanner.Disconnect()
@@ -434,10 +449,11 @@ func inch1200ToDim(v uint16) abstract.Dimension {
 // scanDocument wraps a ScanSession as an abstract.Document.
 // Pages are pulled lazily from the scanner one at a time.
 type scanDocument struct {
-	res     abstract.Resolution
-	session *vens.ScanSession
-	format  string // "image/jpeg" or "image/tiff"
-	adapter *ESCLAdapter
+	res       abstract.Resolution
+	session   *vens.ScanSession
+	format    string // "image/jpeg" or "image/tiff"
+	adapter   *ESCLAdapter
+	colorMode vens.ColorMode // for ActualBytesPerLine calculation
 }
 
 func (d *scanDocument) Resolution() abstract.Resolution { return d.res }
@@ -463,6 +479,27 @@ func (d *scanDocument) Next() (abstract.DocumentFile, error) {
 		// Skip empty pages (blank page removal filtered them out)
 		return d.Next()
 	}
+
+	// Capture actual image dimensions for ScanImageInfo
+	var w, h int
+	if cfg, _, err := image.DecodeConfig(bytes.NewReader(page.JPEG)); err == nil {
+		w, h = cfg.Width, cfg.Height
+	}
+	if w > 0 {
+		bpl := w * 3 // color (RGB)
+		switch d.colorMode {
+		case vens.ColorGray:
+			bpl = w
+		case vens.ColorBW:
+			bpl = (w + 7) / 8
+		}
+		d.adapter.mu.Lock()
+		d.adapter.lastImageWidth = w
+		d.adapter.lastImageHeight = h
+		d.adapter.lastImageBPL = bpl
+		d.adapter.mu.Unlock()
+	}
+
 	return &scanFile{Reader: bytes.NewReader(page.JPEG), format: d.format}, nil
 }
 
