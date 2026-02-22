@@ -226,16 +226,17 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 		return &pdfDocument{res: res, session: session, adapter: a, colorMode: cfg.ColorMode}, nil
 	}
 
-	doc := &scanDocument{res: res, session: session, format: format, adapter: a, colorMode: cfg.ColorMode}
-
-	// Apply filter for format conversion if needed
+	// Reject incompatible format+colorMode combinations (eSCL spec: 409 Conflict)
+	// TIFF is only valid for BW; JPEG is only valid for color/grayscale
 	if req.DocumentFormat != "" && req.DocumentFormat != format {
-		return abstract.NewFilter(doc, abstract.FilterOptions{
-			OutputFormat: req.DocumentFormat,
-		}), nil
+		session.Close()
+		a.mu.Lock()
+		a.scanning = false
+		a.mu.Unlock()
+		return nil, fmt.Errorf("%s is not supported with the requested color mode", req.DocumentFormat)
 	}
 
-	return doc, nil
+	return &scanDocument{res: res, session: session, format: format, adapter: a, colorMode: cfg.ColorMode}, nil
 }
 
 // CheckADFStatus queries the scanner for paper presence and error conditions.
