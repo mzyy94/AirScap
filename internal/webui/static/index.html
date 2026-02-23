@@ -16,6 +16,7 @@
     input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--bulma-primary); cursor: pointer; border: 2px solid var(--bulma-border); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
     input[type=range]::-moz-range-thumb { width: 20px; height: 20px; border-radius: 50%; background: var(--bulma-primary); cursor: pointer; border: 2px solid var(--bulma-border); box-shadow: 0 1px 3px rgba(0,0,0,.3); }
     .range-labels { display: flex; justify-content: space-between; font-size: .7rem; color: var(--bulma-text-50); margin-top: -4px; }
+    a.card-header-icon { color: inherit; }
   </style>
 </head>
 <body x-data="app()" x-init="init()">
@@ -42,11 +43,11 @@
       </div>
 
       <!-- Connection Status -->
-      <div class="card mb-4" x-cloak x-show="status">
+      <div class="card mb-4" id="status" x-cloak x-show="status">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#status">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('status')"></p>
         </header>
         <div class="card-content">
@@ -89,11 +90,11 @@
       </div>
 
       <!-- Device Info -->
-      <div class="card mb-4" x-cloak x-show="status?.device">
+      <div class="card mb-4" id="device" x-cloak x-show="status?.device">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#device">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('deviceInfo')"></p>
         </header>
         <div class="card-content fixed-grid">
@@ -111,11 +112,11 @@
       </div>
 
       <!-- Capabilities -->
-      <div class="card mb-4" x-cloak x-show="status?.capabilities">
+      <div class="card mb-4" id="capabilities" x-cloak x-show="status?.capabilities">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#capabilities">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('capabilities')"></p>
         </header>
         <div class="card-content">
@@ -154,11 +155,11 @@
       </div>
 
       <!-- Default Settings -->
-      <div class="card mb-4" x-cloak x-show="settingsReady">
+      <div class="card mb-4" id="settings" x-cloak x-show="settingsReady">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#settings">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('scanSettings')"></p>
           <span class="card-header-icon">
             <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
@@ -270,11 +271,11 @@
       </div>
 
       <!-- Save Destination -->
-      <div class="card mb-4" x-cloak x-show="settingsReady">
+      <div class="card mb-4" id="save" x-cloak x-show="settingsReady">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#save">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('saveDestination')"></p>
           <span class="card-header-icon">
             <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
@@ -369,11 +370,11 @@
       </div>
 
       <!-- Scan Job Status -->
-      <div class="card mb-4" x-cloak x-show="scanJob.scanning || scanJob.lastScan">
+      <div class="card mb-4" id="scan" x-cloak x-show="scanJob.scanning || scanJob.lastScan">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#scan">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('scan')"></p>
         </header>
         <div class="card-content">
@@ -399,11 +400,11 @@
       </div>
 
       <!-- AirScan Settings -->
-      <div class="card mb-4" x-cloak x-show="settingsReady">
+      <div class="card mb-4" id="airscan" x-cloak x-show="settingsReady">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#airscan">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('airscanSettings')"></p>
           <span class="card-header-icon">
             <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
@@ -439,11 +440,11 @@
       </div>
 
       <!-- eSCL Endpoint -->
-      <div class="card mb-4" x-cloak x-show="status?.esclUrl">
+      <div class="card mb-4" id="escl" x-cloak x-show="status?.esclUrl">
         <header class="card-header">
-          <span class="card-header-icon">
+          <a class="card-header-icon" href="#escl">
             <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg></span>
-          </span>
+          </a>
           <p class="card-header-title" x-text="t('esclEndpoint')"></p>
         </header>
         <div class="card-content">
