@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
@@ -44,8 +45,16 @@ func GeneratePDF(pages []vens.Page, dpi int, isBW bool) ([]byte, error) {
 			return nil, fmt.Errorf("decode page %d image config: %w", i+1, err)
 		}
 
-		widthMM := float64(cfg.Width) / float64(dpi) * 25.4
-		heightMM := float64(cfg.Height) / float64(dpi) * 25.4
+		// Use actual DPI embedded in the image data when available
+		pageDPI := dpi
+		if d := detectImageDPI(p.JPEG); d > 0 {
+			pageDPI = d
+		} else if p.PixelSize != nil && p.PixelSize.XRes > 0 {
+			pageDPI = p.PixelSize.XRes
+		}
+
+		widthMM := float64(cfg.Width) / float64(pageDPI) * 25.4
+		heightMM := float64(cfg.Height) / float64(pageDPI) * 25.4
 
 		pdf.AddPageFormat("P", fpdf.SizeType{Wd: widthMM, Ht: heightMM})
 
@@ -72,6 +81,87 @@ func GeneratePDF(pages []vens.Page, dpi int, isBW bool) ([]byte, error) {
 		return nil, fmt.Errorf("generate PDF: %w", err)
 	}
 	return out.Bytes(), nil
+}
+
+// detectImageDPI extracts the X resolution (DPI) from image data.
+// Supports TIFF (IFD XResolution tag) and JPEG (JFIF APP0 density).
+// Returns 0 if the DPI cannot be determined.
+func detectImageDPI(data []byte) int {
+	if len(data) < 8 {
+		return 0
+	}
+	// TIFF: starts with "II" (little-endian) or "MM" (big-endian)
+	if (data[0] == 'I' && data[1] == 'I') || (data[0] == 'M' && data[1] == 'M') {
+		return detectTIFFDPI(data)
+	}
+	// JPEG: starts with FF D8
+	if data[0] == 0xFF && data[1] == 0xD8 {
+		return detectJPEGDPI(data)
+	}
+	return 0
+}
+
+func detectTIFFDPI(data []byte) int {
+	var bo binary.ByteOrder
+	if data[0] == 'I' {
+		bo = binary.LittleEndian
+	} else {
+		bo = binary.BigEndian
+	}
+	if bo.Uint16(data[2:4]) != 42 {
+		return 0
+	}
+	ifdOff := int(bo.Uint32(data[4:8]))
+	if ifdOff+2 > len(data) {
+		return 0
+	}
+	n := int(bo.Uint16(data[ifdOff : ifdOff+2]))
+	for i := range n {
+		off := ifdOff + 2 + i*12
+		if off+12 > len(data) {
+			break
+		}
+		tag := bo.Uint16(data[off : off+2])
+		if tag == 282 { // XResolution (RATIONAL = num/den)
+			valOff := int(bo.Uint32(data[off+8 : off+12]))
+			if valOff+8 > len(data) {
+				return 0
+			}
+			num := bo.Uint32(data[valOff : valOff+4])
+			den := bo.Uint32(data[valOff+4 : valOff+8])
+			if den == 0 {
+				return 0
+			}
+			return int(num / den)
+		}
+	}
+	return 0
+}
+
+func detectJPEGDPI(data []byte) int {
+	i := 2
+	for i+4 < len(data) {
+		if data[i] != 0xFF {
+			break
+		}
+		marker := data[i+1]
+		segLen := int(binary.BigEndian.Uint16(data[i+2 : i+4]))
+		if marker == 0xE0 && segLen >= 14 { // APP0 (JFIF)
+			seg := data[i+4:]
+			if len(seg) >= 10 && string(seg[0:5]) == "JFIF\x00" {
+				units := seg[7]
+				xd := int(binary.BigEndian.Uint16(seg[8:10]))
+				if units == 1 { // dots per inch
+					return xd
+				}
+				if units == 2 { // dots per cm
+					return int(float64(xd) * 2.54)
+				}
+			}
+		}
+		i += 2 + segLen
+	}
+	return 0
 }
 
 // toBitonalPNG converts an image to a 1-bit paletted image (black & white).
