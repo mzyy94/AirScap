@@ -214,12 +214,6 @@ func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	isBW := cfg.ColorMode == vens.ColorBW
-	mime := "image/jpeg"
-	if isBW {
-		mime = "image/tiff"
-	}
-
 	type previewPage struct {
 		DataURL string `json:"dataUrl"`
 		Width   int    `json:"width,omitempty"`
@@ -230,6 +224,7 @@ func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
 
 	result := make([]previewPage, len(pages))
 	for i, p := range pages {
+		mime := detectImageMIME(p.JPEG)
 		pp := previewPage{
 			DataURL: fmt.Sprintf("data:%s;base64,%s", mime, base64.StdEncoding.EncodeToString(p.JPEG)),
 			Size:    len(p.JPEG),
@@ -244,12 +239,27 @@ func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
 		result[i] = pp
 	}
 
-	slog.Info("scan preview complete", "pages", len(pages), "format", mime)
+	slog.Info("scan preview complete", "pages", len(pages))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]any{
 		"pages": result,
 	})
+}
+
+// detectImageMIME returns the MIME type based on magic bytes.
+// TIFF: 49 49 2A 00 (little-endian) or 4D 4D 00 2A (big-endian)
+// JPEG: FF D8 FF
+func detectImageMIME(data []byte) string {
+	if len(data) >= 4 {
+		if data[0] == 0x49 && data[1] == 0x49 && data[2] == 0x2A && data[3] == 0x00 {
+			return "image/tiff"
+		}
+		if data[0] == 0x4D && data[1] == 0x4D && data[2] == 0x00 && data[3] == 0x2A {
+			return "image/tiff"
+		}
+	}
+	return "image/jpeg"
 }
 
 func wifiStateString(state uint32) string {

@@ -100,6 +100,7 @@ const MESSAGES = {
   // Browser scan
   scanNow:          { en: 'Scan & Preview',                 ja: 'スキャンしてプレビュー' },
   scanResult:       { en: 'Scan Result',                    ja: 'スキャン結果' },
+  previewUnsupported: { en: 'This image format cannot be previewed in your browser. Please download to view.', ja: 'この画像形式はブラウザでプレビューできません。ダウンロードして確認してください。' },
   downloadPage:     { en: 'Download Page',                  ja: 'ページをダウンロード' },
   close:            { en: 'Close',                          ja: '閉じる' },
 };

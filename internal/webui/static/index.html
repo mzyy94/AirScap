@@ -475,8 +475,20 @@
         <button class="delete" @click="scanPreview.showModal = false"></button>
       </header>
       <section class="modal-card-body" style="padding:0.75rem">
-        <!-- Page navigation -->
-        <nav class="pagination is-small is-centered mb-2" role="navigation" x-show="scanPreview.pages.length > 1">
+        <figure class="image has-text-centered" x-data="{ imgError: false }"
+          x-effect="scanPreview.currentPage; scanPreview.pages; imgError = false">
+          <img :src="previewPage?.dataUrl" style="max-height:70vh; object-fit:contain; width:100%;"
+            @error="if (previewPage?.dataUrl) imgError = true" x-show="!imgError">
+          <div x-show="imgError" class="notification is-warning is-light my-4">
+            <p x-text="t('previewUnsupported')"></p>
+            <a class="button is-primary is-small mt-3" :href="previewPage?.dataUrl"
+              :download="'scan_' + (scanPreview.currentPage + 1) + (previewPage?.dataUrl?.startsWith('data:image/tiff') ? '.tiff' : '.jpg')"
+              x-text="t('downloadPage')"></a>
+          </div>
+        </figure>
+      </section>
+      <footer class="modal-card-foot is-flex-direction-column" style="gap:0.5rem">
+        <nav class="pagination is-small is-centered" role="navigation" x-show="scanPreview.pages.length > 1" style="width:100%">
           <a class="pagination-previous" @click="scanPreview.currentPage--"
             :disabled="scanPreview.currentPage === 0">&lsaquo;</a>
           <a class="pagination-next" @click="scanPreview.currentPage++"
@@ -488,21 +500,17 @@
             </template>
           </ul>
         </nav>
-        <!-- Page preview -->
-        <figure class="image has-text-centered">
-          <img :src="previewPage?.dataUrl" style="max-height:70vh; object-fit:contain; width:100%;">
-        </figure>
-        <p class="has-text-centered is-size-7 has-text-grey mt-1"
-          x-show="previewPage?.width"
-          x-text="previewPage?.width + ' \u00d7 ' + previewPage?.height + ' px' + (previewPage?.dpi ? ' (' + previewPage.dpi + ' DPI)' : '') + (previewPage?.size ? ' / ' + new Intl.NumberFormat(lang, { style: 'unit', unit: 'kilobyte', maximumFractionDigits: 0 }).format(previewPage.size / 1024) : '')">
-        </p>
-      </section>
-      <footer class="modal-card-foot">
-        <div class="buttons">
-          <a class="button is-primary" :href="previewPage?.dataUrl"
-            :download="'scan_' + (scanPreview.currentPage + 1) + (previewPage?.dataUrl?.startsWith('data:image/tiff') ? '.tiff' : '.jpg')"
-            x-text="t('downloadPage')"></a>
-          <button class="button" @click="scanPreview.showModal = false" x-text="t('close')"></button>
+        <div class="is-flex is-justify-content-space-between is-align-items-center" style="width:100%">
+          <span class="is-size-7 has-text-grey"
+            x-show="previewPage?.width"
+            x-text="previewPage?.width + ' \u00d7 ' + previewPage?.height + ' px' + (previewPage?.dpi ? ' (' + previewPage.dpi + ' DPI)' : '') + (previewPage?.size ? ' / ' + new Intl.NumberFormat(lang, { style: 'unit', unit: 'kilobyte', maximumFractionDigits: 0 }).format(previewPage.size / 1024) : '')">
+          </span>
+          <div class="buttons mb-0">
+            <a class="button is-primary" :href="previewPage?.dataUrl"
+              :download="'scan_' + (scanPreview.currentPage + 1) + (previewPage?.dataUrl?.startsWith('data:image/tiff') ? '.tiff' : '.jpg')"
+              x-text="t('downloadPage')"></a>
+            <button class="button" @click="scanPreview.showModal = false" x-text="t('close')"></button>
+          </div>
         </div>
       </footer>
     </div>
