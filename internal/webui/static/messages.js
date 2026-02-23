@@ -18,6 +18,7 @@ const MESSAGES = {
   adfErr_jam:       { en: 'Paper jam',    ja: '紙詰まり' },
   adfErr_hatchOpen: { en: 'Cover open',   ja: 'カバーオープン' },
   adfErr_multiFeed: { en: 'Multi-feed',   ja: '重送検知' },
+  adfErr_error:     { en: 'Scanner error', ja: 'スキャナーエラー' },
 
   // Device info
   name:             { en: 'Name',         ja: '名前' },

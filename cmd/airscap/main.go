@@ -233,6 +233,8 @@ func main() {
 				hasPaper, err := adapter.CheckADFStatus()
 				if err != nil {
 					slog.Warn("ADF status check failed", "err", err)
+					// Still report cached ADF state (JAM, cover open, etc.)
+					status.ADFState = optional.New(adapter.ADFState())
 					return status
 				}
 				// Use error-aware ADF state; override with live paper status when no error

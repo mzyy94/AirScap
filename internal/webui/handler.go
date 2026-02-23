@@ -60,7 +60,7 @@ type statusResponse struct {
 
 type adfStatus struct {
 	Loaded bool   `json:"loaded"`
-	Error  string `json:"error,omitempty"` // "jam", "hatchOpen", "multiFeed", or ""
+	Error  string `json:"error,omitempty"` // "jam", "hatchOpen", "multiFeed", "error", or ""
 }
 
 type deviceInfo struct {
@@ -110,8 +110,30 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 				adf.Error = "hatchOpen"
 			case vens.ScanErrMultiFeed:
 				adf.Error = "multiFeed"
+			case vens.ScanErrGeneric:
+				adf.Error = "error"
+			}
+			if adf.Error != "" {
+				resp.State = "error"
 			}
 			resp.ADF = adf
+		} else {
+			// CheckADFStatus failed; still report cached error state
+			adf := &adfStatus{}
+			switch h.adapter.LastErrorKind() {
+			case vens.ScanErrPaperJam:
+				adf.Error = "jam"
+			case vens.ScanErrCoverOpen:
+				adf.Error = "hatchOpen"
+			case vens.ScanErrMultiFeed:
+				adf.Error = "multiFeed"
+			case vens.ScanErrGeneric:
+				adf.Error = "error"
+			}
+			if adf.Error != "" {
+				resp.State = "error"
+				resp.ADF = adf
+			}
 		}
 	}
 
