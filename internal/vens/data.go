@@ -604,6 +604,9 @@ func (d *DataChannel) CheckADFStatus() (*ADFStatus, error) {
 		errorField := binary.BigEndian.Uint32(resp[StatusRespErrorOffset : StatusRespErrorOffset+4])
 		result.ErrorCode = uint16(errorField & 0xFFFF)
 	}
+	if unknown := scanStatus & ^adfKnownMask; unknown != 0 {
+		slog.Warn("unknown scan status flags detected", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "unknownBits", fmt.Sprintf("0x%08X", unknown))
+	}
 	slog.Debug("ADF status check", "scanStatus", fmt.Sprintf("0x%08X", scanStatus), "paper", result.HasPaper, "jam", result.HasJam, "coverOpen", result.HasCoverOpen, "errorCode", fmt.Sprintf("0x%04X", result.ErrorCode))
 	return result, nil
 }

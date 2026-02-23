@@ -54,6 +54,10 @@ const (
 	ADFCoverOpenMask uint32 = 0x0020 // Bit 5: ADF cover open
 	ADFPaperMask     uint32 = 0x0080 // Bit 7: set = no paper; clear = paper present
 	ADFJamMask       uint32 = 0x8000 // Bit 15: paper jam (valid only in idle/ADF status context)
+
+	// adfKnownMask is the union of all recognized scan status bits.
+	// Used to detect unknown flags for diagnostics.
+	adfKnownMask uint32 = ADFCoverOpenMask | ADFPaperMask | ADFJamMask
 )
 
 // SCSI opcodes (CDB byte 0).
