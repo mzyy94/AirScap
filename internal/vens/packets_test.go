@@ -12,26 +12,26 @@ import (
 func buildPcapScanParamsResponse() []byte {
 	data := make([]byte, 184)
 	// VENS response header [0:40]
-	binary.BigEndian.PutUint32(data[0:4], 184)    // Size
-	copy(data[4:8], Magic[:])                      // Magic "VENS"
+	binary.BigEndian.PutUint32(data[0:4], 184)         // Size
+	copy(data[4:8], Magic[:])                          // Magic "VENS"
 	binary.BigEndian.PutUint32(data[32:36], CmdGetSet) // Command echo
 
 	// SCSI INQUIRY VPD 0xF0 data [40:]
-	data[40] = 0x06                                    // Device Type = scanner
-	data[41] = 0xF0                                    // Page Code
-	binary.BigEndian.PutUint16(data[42:44], 0x0200)    // Page Length
-	data[44] = 0x8B                                    // Vendor data length = 139
-	binary.BigEndian.PutUint16(data[45:47], 600)       // Max Resolution X (DPI)
-	binary.BigEndian.PutUint16(data[47:49], 600)       // Max Resolution Y (DPI)
-	data[49] = 0x11                                    // Color Modes bitmask
-	binary.BigEndian.PutUint16(data[50:52], 600)       // Default Resolution X
-	binary.BigEndian.PutUint16(data[52:54], 600)       // Default Resolution Y
-	binary.BigEndian.PutUint16(data[54:56], 50)        // Min Resolution X
-	binary.BigEndian.PutUint16(data[56:58], 50)        // Min Resolution Y
-	data[58] = 0xFF                                    // unknown
-	data[59] = 0xFC                                    // unknown
-	binary.BigEndian.PutUint16(data[62:64], 0x1468)    // Max Width = 5224 (1/600 inch)
-	binary.BigEndian.PutUint16(data[66:68], 0x50E8)    // Max Height = 20712 (1/600 inch)
+	data[40] = 0x06                                 // Device Type = scanner
+	data[41] = 0xF0                                 // Page Code
+	binary.BigEndian.PutUint16(data[42:44], 0x0200) // Page Length
+	data[44] = 0x8B                                 // Vendor data length = 139
+	binary.BigEndian.PutUint16(data[45:47], 600)    // Max Resolution X (DPI)
+	binary.BigEndian.PutUint16(data[47:49], 600)    // Max Resolution Y (DPI)
+	data[49] = 0x11                                 // Color Modes bitmask
+	binary.BigEndian.PutUint16(data[50:52], 600)    // Default Resolution X
+	binary.BigEndian.PutUint16(data[52:54], 600)    // Default Resolution Y
+	binary.BigEndian.PutUint16(data[54:56], 50)     // Min Resolution X
+	binary.BigEndian.PutUint16(data[56:58], 50)     // Min Resolution Y
+	data[58] = 0xFF                                 // unknown
+	data[59] = 0xFC                                 // unknown
+	binary.BigEndian.PutUint16(data[62:64], 0x1468) // Max Width = 5224 (1/600 inch)
+	binary.BigEndian.PutUint16(data[66:68], 0x50E8) // Max Height = 20712 (1/600 inch)
 
 	// Additional data after offset 68 (from pcap, partial)
 	data[68] = 0x8F
@@ -134,7 +134,7 @@ func TestParseScanParams_ExactMinLength(t *testing.T) {
 	copy(data[4:8], Magic[:])
 	binary.BigEndian.PutUint16(data[45:47], 300) // Max Res X
 	binary.BigEndian.PutUint16(data[47:49], 300) // Max Res Y
-	data[49] = 0x07                               // Color Modes
+	data[49] = 0x07                              // Color Modes
 	binary.BigEndian.PutUint16(data[54:56], 100) // Min Res X
 	binary.BigEndian.PutUint16(data[56:58], 100) // Min Res Y
 	binary.BigEndian.PutUint16(data[62:64], 500) // Max Width (1/600)
@@ -276,7 +276,7 @@ func TestParseDeviceInfo(t *testing.T) {
 	data := make([]byte, 132)
 	copy(data[0:4], Magic[:])
 	binary.BigEndian.PutUint16(data[4:6], 1) // Paired
-	data[16] = 192                            // DeviceIP
+	data[16] = 192                           // DeviceIP
 	data[17] = 168
 	data[18] = 5
 	data[19] = 3
@@ -292,7 +292,7 @@ func TestParseDeviceInfo(t *testing.T) {
 	binary.BigEndian.PutUint32(data[36:40], 0x00000001) // State
 	copy(data[40:104], "iX500-AK7CC00700\x00")          // Serial
 	copy(data[104:120], "ScanSnap iX500\x00")           // Name
-	data[120] = 192                                      // ClientIP
+	data[120] = 192                                     // ClientIP
 	data[121] = 168
 	data[122] = 5
 	data[123] = 10
@@ -464,8 +464,8 @@ func TestParsePageHeader(t *testing.T) {
 	binary.BigEndian.PutUint32(data[0:4], 1000) // TotalLength
 	copy(data[4:8], Magic[:])
 	binary.BigEndian.PutUint32(data[12:16], PageTypeFinal) // PageType
-	data[40] = 3 // Sheet
-	data[41] = 1 // Side (back)
+	data[40] = 3                                           // Sheet
+	data[41] = 1                                           // Side (back)
 
 	hdr, err := ParsePageHeader(data)
 	if err != nil {
@@ -841,10 +841,10 @@ func TestMarshalScanConfig_BWDensity(t *testing.T) {
 		density int
 		want    byte
 	}{
-		{"min", -5, 1},  // 6 + (-5) = 1
-		{"zero", 0, 6},  // 6 + 0 = 6
-		{"max", 5, 11},  // 6 + 5 = 11
-		{"mid", 3, 9},   // 6 + 3 = 9
+		{"min", -5, 1}, // 6 + (-5) = 1
+		{"zero", 0, 6}, // 6 + 0 = 6
+		{"max", 5, 11}, // 6 + 5 = 11
+		{"mid", 3, 9},  // 6 + 3 = 9
 	}
 
 	for _, tt := range tests {

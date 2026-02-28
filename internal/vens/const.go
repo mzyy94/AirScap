@@ -8,12 +8,12 @@ var (
 
 // Network ports used by the ScanSnap protocol.
 const (
-	BroadcastPort      = 53220 // UDP: scanner advertisement broadcast
-	DiscoveryPort      = 52217 // UDP: scanner-side discovery
-	DefaultDataPort    = 53218 // TCP: data channel
-	DefaultControlPort = 53219 // TCP: control channel
+	BroadcastPort       = 53220 // UDP: scanner advertisement broadcast
+	DiscoveryPort       = 52217 // UDP: scanner-side discovery
+	DefaultDataPort     = 53218 // TCP: data channel
+	DefaultControlPort  = 53219 // TCP: control channel
 	ClientDiscoveryPort = 55264 // UDP: client-side discovery
-	ClientNotifyPort   = 55265 // UDP: event notification (button press)
+	ClientNotifyPort    = 55265 // UDP: event notification (button press)
 )
 
 // Control channel commands (TCP:53219).
@@ -58,6 +58,9 @@ const (
 	// adfKnownMask is the union of all recognized scan status bits.
 	// Used to detect unknown flags for diagnostics.
 	adfKnownMask uint32 = ADFCoverOpenMask | ADFPaperMask | ADFJamMask
+
+	// GET_STATUS error codes (offset 44, lower 16 bits).
+	ErrorCodeMultiFeed uint16 = 0x0155 // Multi-feed / duplicate detected
 )
 
 // SCSI opcodes (CDB byte 0).
@@ -69,16 +72,16 @@ const (
 
 // READ(10) Data Type values (CDB byte 2).
 const (
-	DataTypeImage       byte = 0x00 // Image data (chunked transfer)
-	DataTypePixelSize   byte = 0x80 // Pixel size after scan (32 bytes)
-	DataTypePaperSize   byte = 0x81 // Paper size after scan (8 bytes)
+	DataTypeImage        byte = 0x00 // Image data (chunked transfer)
+	DataTypePixelSize    byte = 0x80 // Pixel size after scan (32 bytes)
+	DataTypePaperSize    byte = 0x81 // Paper size after scan (8 bytes)
 	DataTypeCarrierSheet byte = 0x83 // Carrier sheet info (4 bytes)
 )
 
 // READ(10) response sizes for metadata types.
 const (
-	PixelSizeResponseLen  uint32 = 0x20 // 32 bytes
-	PaperSizeResponseLen  uint32 = 0x08 // 8 bytes
+	PixelSizeResponseLen uint32 = 0x20 // 32 bytes
+	PaperSizeResponseLen uint32 = 0x08 // 8 bytes
 )
 
 // Page transfer constants.

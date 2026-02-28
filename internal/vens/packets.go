@@ -53,10 +53,10 @@ func nullTerminated(b []byte) string {
 
 type packet []byte
 
-func newPacket(size int) packet               { return make(packet, size) }
-func (p packet) putU32(off int, v uint32)     { binary.BigEndian.PutUint32(p[off:], v) }
-func (p packet) putU16(off int, v uint16)     { binary.BigEndian.PutUint16(p[off:], v) }
-func (p packet) putBytes(off int, b []byte)   { copy(p[off:], b) }
+func newPacket(size int) packet             { return make(packet, size) }
+func (p packet) putU32(off int, v uint32)   { binary.BigEndian.PutUint32(p[off:], v) }
+func (p packet) putU16(off int, v uint16)   { binary.BigEndian.PutUint16(p[off:], v) }
+func (p packet) putBytes(off int, b []byte) { copy(p[off:], b) }
 
 // --------------------------------------------------------------------------
 // Wire types — struct layout matches the on-wire format byte-for-byte.
@@ -66,35 +66,35 @@ func (p packet) putBytes(off int, b []byte)   { copy(p[off:], b) }
 
 // controlHeader is the 24-byte common header for TCP control channel packets.
 type controlHeader struct {
-	Size    uint32   // [0:4]
-	Magic   [4]byte  // [4:8]
-	Command uint32   // [8:12]
-	_       [4]byte  // [12:16]
-	Token   [8]byte  // [16:24]
+	Size    uint32  // [0:4]
+	Magic   [4]byte // [4:8]
+	Command uint32  // [8:12]
+	_       [4]byte // [12:16]
+	Token   [8]byte // [16:24]
 }
 
 // releaseRequestWire is a 32-byte release packet (register/deregister session).
 type releaseRequestWire struct {
-	controlHeader        // [0:24]
-	Action        uint32 // [24:28]
+	controlHeader         // [0:24]
+	Action        uint32  // [24:28]
 	_             [4]byte // [28:32]
 }
 
 // getWifiStatusRequestWire is a 32-byte WiFi status request packet.
 type getWifiStatusRequestWire struct {
-	controlHeader        // [0:24]
+	controlHeader         // [0:24]
 	_             [8]byte // [24:32]
 }
 
 // dataHeader is the 36-byte common header for TCP data channel requests.
 type dataHeader struct {
-	Size      uint32   // [0:4]
-	Magic     [4]byte  // [4:8]
-	Direction uint32   // [8:12]  1=client→scanner
-	_         [4]byte  // [12:16]
-	Token     [8]byte  // [16:24]
-	_         [8]byte  // [24:32]
-	Command   uint32   // [32:36]
+	Size      uint32  // [0:4]
+	Magic     [4]byte // [4:8]
+	Direction uint32  // [8:12]  1=client→scanner
+	_         [4]byte // [12:16]
+	Token     [8]byte // [16:24]
+	_         [8]byte // [24:32]
+	Command   uint32  // [32:36]
 }
 
 // broadcastWire is a 48-byte scanner advertisement (UDP:53220).
@@ -443,7 +443,7 @@ func MarshalGetScanParams(token [8]byte) []byte {
 	p := newPacket(28)
 	p.putU32(0, 0x00000090)
 	p.putU32(12, uint32(SCSIOpcodeInquiry)<<24|0x01F000) // CDB: INQUIRY, EVPD=1, Page=0xF0
-	p.putU32(16, 0x90000000)                              // Allocation Length = 0x90 (144)
+	p.putU32(16, 0x90000000)                             // Allocation Length = 0x90 (144)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 
@@ -561,9 +561,9 @@ func ParsePixelSizeInfo(resp []byte) (*PixelSizeInfo, error) {
 // MarshalGetPageMetadata builds a SCSI REQUEST SENSE request for page metadata after transfer.
 func MarshalGetPageMetadata(token [8]byte) []byte {
 	p := newPacket(28)
-	p.putU32(0, 0x00000012)                              // Allocation Length = 18
-	p.putU32(12, uint32(SCSIOpcodeRequestSense)<<24)      // CDB[0] = REQUEST SENSE
-	p.putU32(16, 0x12000000)                              // CDB[4] = Allocation Length (18)
+	p.putU32(0, 0x00000012)                          // Allocation Length = 18
+	p.putU32(12, uint32(SCSIOpcodeRequestSense)<<24) // CDB[0] = REQUEST SENSE
+	p.putU32(16, 0x12000000)                         // CDB[4] = Allocation Length (18)
 	return marshalDataRequest(token, CmdGetSet, p)
 }
 

@@ -112,16 +112,16 @@ func TestMapScanConfig_ColorModes(t *testing.T) {
 
 func TestMapScanConfig_Resolution(t *testing.T) {
 	tests := []struct {
-		name    string
-		dpi     int
-		wantQ   vens.Quality
+		name  string
+		dpi   int
+		wantQ vens.Quality
 	}{
 		{"zero_auto", 0, vens.QualityAuto},
 		{"150_normal", 150, vens.QualityNormal},
 		{"200_fine", 200, vens.QualityFine},
 		{"300_superfine", 300, vens.QualitySuperFine},
-		{"100_normal", 100, vens.QualityNormal},    // <= 150 → Normal
-		{"175_fine", 175, vens.QualityFine},         // <= 200 → Fine
+		{"100_normal", 100, vens.QualityNormal},       // <= 150 → Normal
+		{"175_fine", 175, vens.QualityFine},           // <= 200 → Fine
 		{"250_superfine", 250, vens.QualitySuperFine}, // > 200 → SuperFine
 	}
 	for _, tt := range tests {

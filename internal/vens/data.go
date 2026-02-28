@@ -22,6 +22,16 @@ const (
 	ScanErrCoverOpen                      // ADF cover open
 )
 
+// ErrorCodeToKind maps GET_STATUS error codes (offset 44, lower 16 bits) to ScanErrorKind.
+func ErrorCodeToKind(code uint16) ScanErrorKind {
+	switch code {
+	case ErrorCodeMultiFeed:
+		return ScanErrMultiFeed
+	default:
+		return ScanErrGeneric
+	}
+}
+
 // ScanError indicates a scanner-level error (no paper, hardware failure, etc.).
 type ScanError struct {
 	Kind ScanErrorKind
@@ -331,11 +341,12 @@ func (s *ScanSession) NextPage() (Page, error) {
 		// Check for scanner error (multi-feed, etc.) at offset 44
 		if len(statusResp) >= StatusRespErrorOffset+4 {
 			errorField := binary.BigEndian.Uint32(statusResp[StatusRespErrorOffset : StatusRespErrorOffset+4])
-			if errorCode := errorField & 0xFFFF; errorCode != 0 {
+			if errorCode := uint16(errorField & 0xFFFF); errorCode != 0 {
 				s.done = true
+				kind := ErrorCodeToKind(errorCode)
 				msg := fmt.Sprintf("scanner error 0x%04X", errorCode)
-				slog.Warn(msg, "errorCode", fmt.Sprintf("0x%04X", errorCode))
-				return Page{}, &ScanError{Kind: ScanErrGeneric, Msg: msg}
+				slog.Warn(msg, "errorCode", fmt.Sprintf("0x%04X", errorCode), "kind", kind)
+				return Page{}, &ScanError{Kind: kind, Msg: msg}
 			}
 		}
 
@@ -596,8 +607,8 @@ func (d *DataChannel) CheckADFStatus() (*ADFStatus, error) {
 	}
 	scanStatus := binary.BigEndian.Uint32(resp[StatusRespScanStatusOffset : StatusRespScanStatusOffset+4])
 	result := &ADFStatus{
-		HasPaper:    HasPaper(scanStatus),
-		HasJam:      scanStatus&ADFJamMask != 0,
+		HasPaper:     HasPaper(scanStatus),
+		HasJam:       scanStatus&ADFJamMask != 0,
 		HasCoverOpen: scanStatus&ADFCoverOpenMask != 0,
 	}
 	if len(resp) >= StatusRespErrorOffset+4 {

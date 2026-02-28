@@ -28,14 +28,14 @@ type ESCLAdapter struct {
 	listenPort       int
 	settings         *config.Store
 	caps             *abstract.ScannerCapabilities
-	adfEmpty         bool              // true after a scan session completes (ADF likely exhausted)
-	blankPageRemoval bool              // controlled by eSCL BlankPageDetectionAndRemoval
-	lastScanErr      *vens.ScanError   // last scan error (for ADF state reporting)
-	scanning         bool              // true while a scan session is active
-	lastImageWidth   int               // actual width (pixels) of last scanned page
-	lastImageHeight  int               // actual height (pixels) of last scanned page
-	lastImageBPL     int               // actual bytes per line of last scanned page
-	pagesCompleted   int               // pages delivered via NextDocument (for ImagesCompleted)
+	adfEmpty         bool            // true after a scan session completes (ADF likely exhausted)
+	blankPageRemoval bool            // controlled by eSCL BlankPageDetectionAndRemoval
+	lastScanErr      *vens.ScanError // last scan error (for ADF state reporting)
+	scanning         bool            // true while a scan session is active
+	lastImageWidth   int             // actual width (pixels) of last scanned page
+	lastImageHeight  int             // actual height (pixels) of last scanned page
+	lastImageBPL     int             // actual bytes per line of last scanned page
+	pagesCompleted   int             // pages delivered via NextDocument (for ImagesCompleted)
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
@@ -289,11 +289,21 @@ func (a *ESCLAdapter) CheckADFStatus() (bool, error) {
 		a.lastScanErr = &vens.ScanError{Kind: vens.ScanErrPaperJam, Msg: "paper jam"}
 	} else if status.ErrorCode != 0 {
 		// Error from GET_STATUS offset 44 (scan-time errors)
-		kind := errorCodeToKind(status.ErrorCode)
-		if a.lastScanErr == nil || a.lastScanErr.Kind != kind {
-			slog.Warn("scanner error detected", "errorCode", fmt.Sprintf("0x%04X", status.ErrorCode), "kind", kind)
+		kind := vens.ErrorCodeToKind(status.ErrorCode)
+		// MultiFeed is recoverable: clear the error when paper is reloaded.
+		// The scanner keeps reporting error_code 0x0155 until SET_SCAN_CONFIG,
+		// but once the user reloads paper we treat it as ready to scan again.
+		if kind == vens.ScanErrMultiFeed && status.HasPaper {
+			if a.lastScanErr != nil {
+				slog.Info("multi-feed error cleared (paper reloaded)", "previousErr", a.lastScanErr.Msg)
+			}
+			a.lastScanErr = nil
+		} else {
+			if a.lastScanErr == nil || a.lastScanErr.Kind != kind {
+				slog.Warn("scanner error detected", "errorCode", fmt.Sprintf("0x%04X", status.ErrorCode), "kind", kind)
+			}
+			a.lastScanErr = &vens.ScanError{Kind: kind, Msg: fmt.Sprintf("scanner error 0x%04X", status.ErrorCode)}
 		}
-		a.lastScanErr = &vens.ScanError{Kind: kind, Msg: fmt.Sprintf("scanner error 0x%04X", status.ErrorCode)}
 	} else if a.lastScanErr != nil {
 		slog.Info("scanner error cleared", "previousErr", a.lastScanErr.Msg)
 		a.lastScanErr = nil
@@ -309,12 +319,12 @@ func (a *ESCLAdapter) ScannerState() escl.ScannerState {
 	}
 	a.mu.Lock()
 	scanning := a.scanning
-	hasErr := a.lastScanErr != nil
+	scanErr := a.lastScanErr
 	a.mu.Unlock()
 	if scanning {
 		return escl.ScannerProcessing
 	}
-	if hasErr {
+	if scanErr != nil {
 		return escl.ScannerStopped
 	}
 	return escl.ScannerIdle
@@ -375,17 +385,6 @@ func (a *ESCLAdapter) PagesCompleted() int {
 func (a *ESCLAdapter) Close() error {
 	a.scanner.Disconnect()
 	return nil
-}
-
-// errorCodeToKind maps GET_STATUS error codes (offset 44) to ScanErrorKind.
-func errorCodeToKind(code uint16) vens.ScanErrorKind {
-	switch code {
-	case 0x0155:
-		return vens.ScanErrMultiFeed
-	default:
-		// Unknown error code — log it so we can add mappings later
-		return vens.ScanErrGeneric
-	}
 }
 
 // mapScanConfig converts an eSCL ScannerRequest to VENS ScanConfig.

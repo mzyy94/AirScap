@@ -37,7 +37,7 @@ func GetLocalIP(targetIP string) string {
 
 // DiscoveryOptions configures scanner discovery.
 type DiscoveryOptions struct {
-	ScannerIP string   // Empty for broadcast discovery
+	ScannerIP string // Empty for broadcast discovery
 	Token     [8]byte
 	Timeout   time.Duration
 }

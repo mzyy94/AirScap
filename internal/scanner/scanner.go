@@ -14,21 +14,21 @@ import (
 
 // Scanner is a high-level interface for ScanSnap operations.
 type Scanner struct {
-	mu          sync.Mutex
-	host        string
-	dataPort    uint16
-	controlPort uint16
-	token       [8]byte
-	identity    string
-	control     *vens.ControlSession
-	heartbeat   *vens.Heartbeat
-	connected   bool
-	name        string
-	serial      string
-	deviceName        string // full device name with manufacturer from TCP GET_SET sub=0x12
-	firmwareRevision  string // firmware revision from device name suffix (e.g. "0M00")
-	scanParams        *vens.ScanParams // capabilities from INQUIRY VPD 0xF0
-	wifiState         uint32           // last GET_WIFI_STATUS state (signal strength, 0 to 3)
+	mu               sync.Mutex
+	host             string
+	dataPort         uint16
+	controlPort      uint16
+	token            [8]byte
+	identity         string
+	control          *vens.ControlSession
+	heartbeat        *vens.Heartbeat
+	connected        bool
+	name             string
+	serial           string
+	deviceName       string           // full device name with manufacturer from TCP GET_SET sub=0x12
+	firmwareRevision string           // firmware revision from device name suffix (e.g. "0M00")
+	scanParams       *vens.ScanParams // capabilities from INQUIRY VPD 0xF0
+	wifiState        uint32           // last GET_WIFI_STATUS state (signal strength, 0 to 3)
 
 	reconnCancel context.CancelFunc
 	reconnDone   chan struct{}
