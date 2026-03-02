@@ -1037,8 +1037,8 @@ Transferred image data uses standard JPEG/JFIF format.
 
 After IMAGE transfer completes for a page, retrieves the actual pixel dimensions and resolution of the scanned image. Uses READ(10) with DataType=`0x80`, Transfer Length=`0x000020` (32 bytes), Transfer Mode=`0x00`.
 
-> [!WARNING]
-> This feature is unverified on real hardware. The response frame structure (header size, etc.) requires confirmation with a real device.
+> [!CAUTION]
+> **This command MUST NOT be sent during a scan session.** The official app does not issue PIXELSIZE queries during scanning. Testing on real hardware confirmed that repeatedly sending PIXELSIZE queries during multi-page duplex scans causes the scanner firmware to hang around the 3rd query, rendering both the data channel and control channel unresponsive. Single queries outside of scan sessions work correctly.
 
 **Response payload (32 bytes):**
 
