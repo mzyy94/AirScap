@@ -400,19 +400,10 @@ func (s *ScanSession) NextPage() (Page, error) {
 		return page, senseErr
 	}
 
-	// Query pixel size metadata (best-effort — don't fail the page on error)
-	s.conn.SetDeadline(time.Now().Add(10 * time.Second))
-	if _, err := s.conn.Write(MarshalReadPixelSize(s.token, s.transferSheet, backSide)); err != nil {
-		slog.Debug("pixelsize query send failed", "err", err)
-	} else if psResp, err := readResponse(s.conn); err != nil {
-		slog.Debug("pixelsize query recv failed", "err", err)
-	} else if psInfo, err := ParsePixelSizeInfo(psResp); err != nil {
-		slog.Debug("pixelsize parse failed", "err", err, "hex", hex.EncodeToString(psResp))
-	} else {
-		page.PixelSize = psInfo
-		slog.Info("pixelsize", "xPixels", psInfo.XPixels, "yPixels", psInfo.YPixels,
-			"xRes", psInfo.XRes, "yRes", psInfo.YRes, "detectedLen", psInfo.DetectedLength)
-	}
+	// NOTE: READ_PIXELSIZE (SCSI READ DataType=0x80) is NOT sent here.
+	// The official app does not issue this command during scan sessions.
+	// Sending it causes the scanner firmware to crash after ~3 queries
+	// during multi-page duplex scans.
 
 	s.transferSheet++
 	s.sideIdx++
