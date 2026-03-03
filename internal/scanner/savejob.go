@@ -138,6 +138,22 @@ func SettingsToScanConfig(s config.Settings) vens.ScanConfig {
 	return cfg
 }
 
+// scanWithPartial runs a scan and returns non-empty pages even on error,
+// so that partial results can still be saved when the scanner hangs midway.
+func scanWithPartial(sc *Scanner, cfg vens.ScanConfig) ([]vens.Page, error) {
+	pages, err := sc.Scan(cfg, nil)
+	var nonEmpty []vens.Page
+	for _, p := range pages {
+		if len(p.JPEG) > 0 {
+			nonEmpty = append(nonEmpty, p)
+		}
+	}
+	if err != nil && len(nonEmpty) > 0 {
+		slog.Warn("scan failed partway, saving partial result", "err", err, "pages", len(nonEmpty))
+	}
+	return nonEmpty, err
+}
+
 // RunSaveJob executes a scan and saves the result to the filesystem.
 func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string) (int, error) {
 	if err := os.MkdirAll(savePath, 0755); err != nil {
@@ -145,11 +161,11 @@ func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string
 	}
 
 	slog.Info("button scan starting", "format", format, "savePath", savePath)
-	pages, err := sc.Scan(cfg, nil)
-	if err != nil {
-		return len(pages), fmt.Errorf("scan: %w", err)
-	}
+	pages, scanErr := scanWithPartial(sc, cfg)
 	if len(pages) == 0 {
+		if scanErr != nil {
+			return 0, fmt.Errorf("scan: %w", scanErr)
+		}
 		return 0, fmt.Errorf("scan returned no pages")
 	}
 
@@ -182,6 +198,9 @@ func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string
 		slog.Info("scan saved as individual files", "path", savePath, "pages", len(pages), "ext", ext)
 	}
 
+	if scanErr != nil {
+		return len(pages), fmt.Errorf("scan: %w", scanErr)
+	}
 	return len(pages), nil
 }
 
@@ -193,11 +212,11 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 	}
 
 	slog.Info("button scan starting (FTP)", "format", format, "host", host)
-	pages, err := sc.Scan(cfg, nil)
-	if err != nil {
-		return len(pages), fmt.Errorf("scan: %w", err)
-	}
+	pages, scanErr := scanWithPartial(sc, cfg)
 	if len(pages) == 0 {
+		if scanErr != nil {
+			return 0, fmt.Errorf("scan: %w", scanErr)
+		}
 		return 0, fmt.Errorf("scan returned no pages")
 	}
 
@@ -258,6 +277,9 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 		slog.Info("scan uploaded via FTP", "pages", len(pages), "ext", ext)
 	}
 
+	if scanErr != nil {
+		return len(pages), fmt.Errorf("scan: %w", scanErr)
+	}
 	return len(pages), nil
 }
 
@@ -266,11 +288,11 @@ func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.S
 	baseURL := strings.TrimRight(s.PaperlessURL, "/")
 
 	slog.Info("button scan starting (Paperless-ngx)", "format", format, "url", baseURL)
-	pages, err := sc.Scan(cfg, nil)
-	if err != nil {
-		return len(pages), fmt.Errorf("scan: %w", err)
-	}
+	pages, scanErr := scanWithPartial(sc, cfg)
 	if len(pages) == 0 {
+		if scanErr != nil {
+			return 0, fmt.Errorf("scan: %w", scanErr)
+		}
 		return 0, fmt.Errorf("scan returned no pages")
 	}
 
@@ -304,6 +326,9 @@ func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.S
 			return len(pages), fmt.Errorf("paperless upload: %w", err)
 		}
 		slog.Info("scan uploaded to Paperless-ngx", "file", filename, "pages", len(pages))
+		if scanErr != nil {
+			return len(pages), fmt.Errorf("scan: %w", scanErr)
+		}
 		return len(pages), nil
 	}
 
@@ -319,6 +344,9 @@ func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.S
 		}
 	}
 	slog.Info("scan uploaded to Paperless-ngx", "pages", len(pages))
+	if scanErr != nil {
+		return len(pages), fmt.Errorf("scan: %w", scanErr)
+	}
 	return len(pages), nil
 }
 
