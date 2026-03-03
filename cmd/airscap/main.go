@@ -10,7 +10,6 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
@@ -121,15 +120,17 @@ func main() {
 	// Scan job status (shared with WebUI)
 	scanStatus := &scanner.ScanJobStatus{}
 
-	// Button listener: trigger scan on physical button press
-	var scanMu sync.Mutex
+	// Button listener: trigger scan on physical button press.
+	// Uses scanner.ScanGuard (deadline-based busy flag) so a stuck goroutine
+	// or panic cannot permanently block subsequent scans.
+	scanGuard := scanner.NewScanGuard(5 * time.Minute)
 	onButtonPress := func() {
-		if !scanMu.TryLock() {
+		if !scanGuard.TryAcquire() {
 			slog.Warn("scan already in progress, ignoring button press")
 			return
 		}
 		go func() {
-			defer scanMu.Unlock()
+			defer scanGuard.Release()
 			s := settingsStore.Get()
 			if s.SaveType == "none" || s.SaveType == "" {
 				slog.Info("save type is 'none', ignoring button press")
@@ -256,7 +257,7 @@ func main() {
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
 	// Web UI for status and settings
-	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version, &scanMu)))
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version, scanGuard)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 

@@ -11,7 +11,6 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/mzyy94/airscap/internal/config"
@@ -30,12 +29,12 @@ type handler struct {
 	settings   *config.Store
 	scanStatus *scanner.ScanJobStatus // nil when button listener is disabled
 	version    string
-	scanMu     *sync.Mutex // shared with button listener for scan exclusion
+	scanGuard  *scanner.ScanGuard // shared with button listener for scan exclusion
 }
 
 // NewHandler creates an HTTP handler for the Web UI.
-func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string, scanMu *sync.Mutex) http.Handler {
-	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version, scanMu: scanMu}
+func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string, scanGuard *scanner.ScanGuard) http.Handler {
+	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version, scanGuard: scanGuard}
 	mux := http.NewServeMux()
 	staticContent, _ := fs.Sub(staticFS, "static")
 	mux.HandleFunc("GET /api/status", h.handleStatus)
@@ -188,11 +187,11 @@ func (h *handler) handleScanStatus(w http.ResponseWriter, r *http.Request) {
 // --- Scan Preview API ---
 
 func (h *handler) handleScanPreview(w http.ResponseWriter, r *http.Request) {
-	if !h.scanMu.TryLock() {
+	if !h.scanGuard.TryAcquire() {
 		writeJSONError(w, http.StatusConflict, "scan_in_progress")
 		return
 	}
-	defer h.scanMu.Unlock()
+	defer h.scanGuard.Release()
 
 	if !h.sc.Online() {
 		writeJSONError(w, http.StatusServiceUnavailable, "scanner_offline")
