@@ -163,14 +163,14 @@ func addPage(pdf *fpdf.Fpdf, img image.Image, blocks []ndlocr.TextBlock) {
 		}
 
 		if isVertical {
-			// Vertical: place characters top-to-bottom
-			fontSize := boxW * 0.9
-			if fontSize <= 0 {
-				fontSize = 8
-			}
+			// Vertical: font size = box width, spaced evenly over box height
+			fontSize := boxW
 			charH := boxH / float64(nChars)
 			if charH < fontSize {
 				fontSize = charH
+			}
+			if fontSize <= 0 {
+				fontSize = 1
 			}
 			pdf.SetFont("ja", "", fontSize)
 			cx := x1 + (boxW-fontSize)/2
@@ -179,14 +179,14 @@ func addPage(pdf *fpdf.Fpdf, img image.Image, blocks []ndlocr.TextBlock) {
 				pdf.Text(cx, cy, string(r))
 			}
 		} else {
-			// Horizontal: fit text in bounding box
-			fontSize := boxH * 0.9
+			// Horizontal: font size = box height, scale to fill box width
+			fontSize := boxH
 			if fontSize <= 0 {
-				fontSize = 8
+				fontSize = 1
 			}
 			pdf.SetFont("ja", "", fontSize)
 			sw := pdf.GetStringWidth(b.Text)
-			if sw > boxW && sw > 0 {
+			if sw > 0 {
 				fontSize *= boxW / sw
 				pdf.SetFont("ja", "", fontSize)
 			}
