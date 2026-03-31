@@ -1,2 +1,3 @@
 [tools]
 go = "1.26.0"
+"pipx:fonttools" = "4.61.1"

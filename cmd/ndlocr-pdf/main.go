@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,11 +20,13 @@ import (
 	"github.com/mzyy94/airscap/ndlocr"
 )
 
+//go:embed ndlocr-metrics.ttf
+var embeddedFont []byte
+
 func main() {
 	sourceImg := flag.String("sourceimg", "", "Input image file path")
 	sourceDir := flag.String("sourcedir", "", "Input image directory path")
 	output := flag.String("output", "", "Output PDF file path (required)")
-	fontPath := flag.String("font", "", "Japanese TTF font path (auto-detect if empty)")
 	device := flag.String("device", "cpu", "Inference device: cpu or cuda")
 	modelDir := flag.String("modeldir", "ndlocr-lite/src", "Model and config directory")
 	jsonOut := flag.Bool("json", false, "Output JSON per image")
@@ -64,15 +67,6 @@ func main() {
 		log.Fatal("no input images found")
 	}
 
-	// Resolve font
-	font := *fontPath
-	if font == "" {
-		font = findFont()
-		if font == "" {
-			log.Fatal("no Japanese font found; specify --font")
-		}
-	}
-
 	// Check models
 	if err := ndlocr.CheckModels(*modelDir); err != nil {
 		log.Fatalf("model check failed: %v", err)
@@ -90,7 +84,7 @@ func main() {
 	defer engine.Close()
 
 	pdf := fpdf.New("P", "pt", "A4", "")
-	pdf.AddUTF8Font("ja", "", font)
+	pdf.AddUTF8FontFromBytes("ja", "", embeddedFont)
 
 	ctx := context.Background()
 	outputDir := filepath.Dir(*output)
@@ -250,41 +244,6 @@ func findRuntimeLib() string {
 			"/usr/lib/libonnxruntime.so",
 		}
 	}
-	for _, c := range candidates {
-		if _, err := os.Stat(c); err == nil {
-			return c
-		}
-	}
-	return ""
-}
-
-func findFont() string {
-	candidates := []string{}
-	switch runtime.GOOS {
-	case "darwin":
-		candidates = []string{
-			"/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc",
-			"/System/Library/Fonts/Hiragino Sans GB.ttc",
-			"/Library/Fonts/NotoSansCJKjp-Regular.otf",
-			"/Library/Fonts/NotoSansJP-Regular.ttf",
-		}
-	case "linux":
-		candidates = []string{
-			"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
-			"/usr/share/fonts/noto-cjk/NotoSansCJKjp-Regular.otf",
-			"/usr/share/fonts/truetype/noto/NotoSansJP-Regular.ttf",
-			"/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc",
-		}
-	}
-	// Also check font/ directory next to the binary
-	if exe, err := os.Executable(); err == nil {
-		dir := filepath.Dir(exe)
-		candidates = append(candidates, filepath.Join(dir, "font", "NotoSansJP-Regular.ttf"))
-	}
-	// Check working directory
-	candidates = append(candidates, "NotoSansJP-Regular.ttf")
-	candidates = append(candidates, "font/NotoSansJP-Regular.ttf")
-
 	for _, c := range candidates {
 		if _, err := os.Stat(c); err == nil {
 			return c
