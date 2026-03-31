@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	_ "embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,9 +18,6 @@ import (
 	"codeberg.org/go-pdf/fpdf"
 	"github.com/mzyy94/airscap/ndlocr"
 )
-
-//go:embed ndlocr-metrics.ttf
-var embeddedFont []byte
 
 func main() {
 	sourceImg := flag.String("sourceimg", "", "Input image file path")
@@ -84,7 +80,7 @@ func main() {
 	defer engine.Close()
 
 	pdf := fpdf.New("P", "pt", "A4", "")
-	pdf.AddUTF8FontFromBytes("ja", "", embeddedFont)
+	pdf.AddUTF8FontFromBytes("ja", "", ndlocr.EmbeddedFont)
 
 	ctx := context.Background()
 	outputDir := filepath.Dir(*output)
