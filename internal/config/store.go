@@ -29,6 +29,8 @@ type Settings struct {
 	AirscanForcePaperAuto bool   `json:"airscanForcePaperAuto"` // AirScan: force paper auto-detect for eSCL clients
 	AirscanBleedThrough   bool   `json:"airscanBleedThrough"`   // AirScan: apply bleed-through reduction
 	AirscanBWDensity      int    `json:"airscanBwDensity"`      // AirScan: B&W density override (-5 to +5)
+	OCRForButtonScan      bool   `json:"ocrForButtonScan"`      // Apply OCR to button scan PDF output
+	OCRForAirscan         bool   `json:"ocrForAirscan"`         // Apply OCR to eSCL PDF output
 }
 
 // DefaultSettings returns the default scan settings.
