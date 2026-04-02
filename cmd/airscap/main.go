@@ -22,6 +22,7 @@ import (
 	"github.com/mzyy94/airscap/internal/scanner"
 	"github.com/mzyy94/airscap/internal/vens"
 	"github.com/mzyy94/airscap/internal/webui"
+	"github.com/mzyy94/airscap/ndlocr"
 )
 
 // Version is set at build time via -ldflags "-X main.version=..."
@@ -114,8 +115,31 @@ func main() {
 		slog.Info("settings store initialized (memory-only, set AIRSCAP_DATA_DIR to persist)")
 	}
 
+	// Initialize OCR engine (optional)
+	var ocrEngine *ndlocr.Engine
+	if modelDir := os.Getenv("AIRSCAP_OCR_MODEL_DIR"); modelDir != "" {
+		ocrDevice := envStr("AIRSCAP_OCR_DEVICE", "cpu")
+		if err := ndlocr.CheckModels(modelDir); err != nil {
+			slog.Warn("OCR model check failed, OCR disabled", "err", err)
+		} else {
+			engine, err := ndlocr.NewEngine(ndlocr.Config{
+				ModelDir: modelDir,
+				Device:   ocrDevice,
+			})
+			if err != nil {
+				slog.Warn("OCR engine initialization failed, OCR disabled", "err", err)
+			} else {
+				ocrEngine = engine
+				slog.Info("OCR engine initialized", "modelDir", modelDir, "device", ocrDevice)
+			}
+		}
+	}
+	if ocrEngine != nil {
+		defer ocrEngine.Close()
+	}
+
 	// Create eSCL adapter
-	adapter := scanner.NewESCLAdapter(sc, listenPort, settingsStore)
+	adapter := scanner.NewESCLAdapter(sc, listenPort, settingsStore, ocrEngine)
 
 	// Scan job status (shared with WebUI)
 	scanStatus := &scanner.ScanJobStatus{}
@@ -150,17 +174,22 @@ func main() {
 			}
 			cfg := scanner.SettingsToScanConfig(s)
 			scanStatus.SetScanning(true)
+			// Pass OCR engine only when enabled for button scan
+			var btnOCR *ndlocr.Engine
+			if ocrEngine != nil && s.OCRForButtonScan {
+				btnOCR = ocrEngine
+			}
 			var pages int
 			var err error
 			switch s.SaveType {
 			case "local":
-				pages, err = scanner.RunSaveJob(sc, cfg, s.Format, s.SavePath)
+				pages, err = scanner.RunSaveJob(sc, cfg, s.Format, s.SavePath, btnOCR)
 				scanStatus.SetResult(err, pages, s.SavePath)
 			case "ftp":
-				pages, err = scanner.RunFTPJob(sc, cfg, s.Format, s)
+				pages, err = scanner.RunFTPJob(sc, cfg, s.Format, s, btnOCR)
 				scanStatus.SetResult(err, pages, s.FTPHost)
 			case "paperless":
-				pages, err = scanner.RunPaperlessJob(sc, cfg, s.Format, s)
+				pages, err = scanner.RunPaperlessJob(sc, cfg, s.Format, s, btnOCR)
 				scanStatus.SetResult(err, pages, s.PaperlessURL)
 			}
 			if err != nil {
@@ -257,7 +286,7 @@ func main() {
 	// Serve at /eSCL/ for clients using the rs TXT record (sane-airscan, macOS)
 	mux.Handle("/eSCL/", http.StripPrefix("/eSCL", esclServer))
 	// Web UI for status and settings
-	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version, scanGuard)))
+	mux.Handle("/ui/", http.StripPrefix("/ui", webui.NewHandler(sc, adapter, listenPort, settingsStore, scanStatus, version, scanGuard, ocrEngine != nil)))
 	// Also serve at root for clients that ignore rs (sane-escl)
 	mux.Handle("/", esclServer)
 

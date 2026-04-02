@@ -23,18 +23,19 @@ import (
 var staticFS embed.FS
 
 type handler struct {
-	adapter    *scanner.ESCLAdapter
-	sc         *scanner.Scanner
-	listenPort int
-	settings   *config.Store
-	scanStatus *scanner.ScanJobStatus // nil when button listener is disabled
-	version    string
-	scanGuard  *scanner.ScanGuard // shared with button listener for scan exclusion
+	adapter      *scanner.ESCLAdapter
+	sc           *scanner.Scanner
+	listenPort   int
+	settings     *config.Store
+	scanStatus   *scanner.ScanJobStatus // nil when button listener is disabled
+	version      string
+	scanGuard    *scanner.ScanGuard // shared with button listener for scan exclusion
+	ocrAvailable bool               // true when OCR engine is initialized
 }
 
 // NewHandler creates an HTTP handler for the Web UI.
-func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string, scanGuard *scanner.ScanGuard) http.Handler {
-	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version, scanGuard: scanGuard}
+func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort int, settings *config.Store, scanStatus *scanner.ScanJobStatus, version string, scanGuard *scanner.ScanGuard, ocrAvailable bool) http.Handler {
+	h := &handler{adapter: adapter, sc: sc, listenPort: listenPort, settings: settings, scanStatus: scanStatus, version: version, scanGuard: scanGuard, ocrAvailable: ocrAvailable}
 	mux := http.NewServeMux()
 	staticContent, _ := fs.Sub(staticFS, "static")
 	mux.HandleFunc("GET /api/status", h.handleStatus)
@@ -47,14 +48,15 @@ func NewHandler(sc *scanner.Scanner, adapter *scanner.ESCLAdapter, listenPort in
 }
 
 type statusResponse struct {
-	Online    bool       `json:"online"`
-	State     string     `json:"state"`
-	ADF       *adfStatus `json:"adf,omitempty"`
-	Device    deviceInfo `json:"device"`
-	Caps      capsInfo   `json:"capabilities"`
-	ESCLUrl   string     `json:"esclUrl"`
-	UpdatedAt string     `json:"updatedAt"`
-	Version   string     `json:"version"`
+	Online       bool       `json:"online"`
+	State        string     `json:"state"`
+	ADF          *adfStatus `json:"adf,omitempty"`
+	Device       deviceInfo `json:"device"`
+	Caps         capsInfo   `json:"capabilities"`
+	ESCLUrl      string     `json:"esclUrl"`
+	UpdatedAt    string     `json:"updatedAt"`
+	Version      string     `json:"version"`
+	OCRAvailable bool       `json:"ocrAvailable"`
 }
 
 type adfStatus struct {
@@ -94,8 +96,9 @@ func (h *handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 			FirmwareRevision: h.sc.FirmwareRevision(),
 			WifiState:        wifiStateString(h.sc.WifiState()),
 		},
-		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-		Version:   h.version,
+		UpdatedAt:    time.Now().UTC().Format(time.RFC3339),
+		Version:      h.version,
+		OCRAvailable: h.ocrAvailable,
 	}
 
 	if online {

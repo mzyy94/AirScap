@@ -439,6 +439,39 @@
         </div>
       </div>
 
+      <!-- OCR Settings -->
+      <div class="card mb-4" id="ocr" x-cloak x-show="settingsReady && status?.ocrAvailable">
+        <header class="card-header">
+          <a class="card-header-icon" href="#ocr">
+            <span class="icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg></span>
+          </a>
+          <p class="card-header-title" x-text="t('ocrSettings')"></p>
+          <span class="card-header-icon">
+            <span x-cloak x-show="settingsSaved" x-transition.opacity class="tag is-success is-light is-rounded is-size-7" x-text="t('saved')"></span>
+            <span x-cloak x-show="settingsError" x-transition.opacity class="tag is-danger is-light is-rounded is-size-7" x-text="t('saveFailed')"></span>
+          </span>
+        </header>
+        <div class="card-content">
+          <div class="field">
+            <label class="label is-small" x-text="t('ocrForButtonScan')"></label>
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="scanConfig.ocrForButtonScan ? 'is-primary is-selected' : ''" @click="scanConfig.ocrForButtonScan = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.ocrForButtonScan ? 'is-primary is-selected' : ''" @click="scanConfig.ocrForButtonScan = false; debounceSaveSettings()">OFF</button>
+            </div>
+            <p class="help" x-text="t('ocrForButtonScanHelp')"></p>
+          </div>
+
+          <div class="field">
+            <label class="label is-small" x-text="t('ocrForAirscan')"></label>
+            <div class="buttons has-addons">
+              <button type="button" class="button" :class="scanConfig.ocrForAirscan ? 'is-primary is-selected' : ''" @click="scanConfig.ocrForAirscan = true; debounceSaveSettings()">ON</button>
+              <button type="button" class="button" :class="!scanConfig.ocrForAirscan ? 'is-primary is-selected' : ''" @click="scanConfig.ocrForAirscan = false; debounceSaveSettings()">OFF</button>
+            </div>
+            <p class="help" x-text="t('ocrForAirscanHelp')"></p>
+          </div>
+        </div>
+      </div>
+
       <!-- eSCL Endpoint -->
       <div class="card mb-4" id="escl" x-cloak x-show="status?.esclUrl">
         <header class="card-header">
@@ -522,7 +555,7 @@
         status: null,
         tick: 0,
         lang: localStorage.getItem('lang') || (navigator.language.startsWith('ja') ? 'ja' : 'en'),
-        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, compression: 3, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', airscanForcePaperAuto: false, airscanBleedThrough: false, airscanBwDensity: 0 },
+        scanConfig: { colorMode: 'auto', resolution: '0', duplex: false, format: 'application/pdf', blankPageRemoval: true, bleedThrough: false, bwDensity: 0, compression: 3, paperSize: 'auto', saveType: 'none', savePath: '', ftpHost: '', ftpUser: '', ftpPassword: '', paperlessUrl: '', paperlessToken: '', airscanForcePaperAuto: false, airscanBleedThrough: false, airscanBwDensity: 0, ocrForButtonScan: false, ocrForAirscan: false },
         scanJob: { scanning: false, lastError: '', lastScan: '', pages: 0, filePath: '' },
         scanPreview: { scanning: false, error: '', pages: [], showModal: false, currentPage: 0 },
         get previewPage() { return this.scanPreview.pages[this.scanPreview.currentPage]; },
@@ -582,6 +615,8 @@
               airscanForcePaperAuto: s.airscanForcePaperAuto || false,
               airscanBleedThrough: s.airscanBleedThrough || false,
               airscanBwDensity: s.airscanBwDensity ?? 0,
+              ocrForButtonScan: s.ocrForButtonScan || false,
+              ocrForAirscan: s.ocrForAirscan || false,
             };
             this.clampToCapabilities();
             this.settingsReady = true;
@@ -637,6 +672,8 @@
               airscanForcePaperAuto: this.scanConfig.airscanForcePaperAuto,
               airscanBleedThrough: this.scanConfig.airscanBleedThrough,
               airscanBwDensity: Number(this.scanConfig.airscanBwDensity),
+              ocrForButtonScan: this.scanConfig.ocrForButtonScan,
+              ocrForAirscan: this.scanConfig.ocrForAirscan,
             };
             const resp = await fetch('api/settings', {
               method: 'PUT',

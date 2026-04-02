@@ -2,6 +2,7 @@ package scanner
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"log/slog"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/vens"
+	"github.com/mzyy94/airscap/ndlocr"
 )
 
 // ScanJobStatus tracks the state of a button-triggered scan job.
@@ -154,8 +156,22 @@ func scanWithPartial(sc *Scanner, cfg vens.ScanConfig) ([]vens.Page, error) {
 	return nonEmpty, err
 }
 
+// generatePDFData generates PDF data, using OCR when engine is non-nil.
+func generatePDFData(pages []vens.Page, dpi int, isBW bool, engine *ndlocr.Engine) ([]byte, error) {
+	if engine != nil {
+		data, err := GenerateOCRPDF(context.Background(), pages, dpi, isBW, engine)
+		if err != nil {
+			slog.Warn("OCR PDF generation failed, falling back to plain PDF", "err", err)
+			return GeneratePDF(pages, dpi, isBW)
+		}
+		return data, nil
+	}
+	return GeneratePDF(pages, dpi, isBW)
+}
+
 // RunSaveJob executes a scan and saves the result to the filesystem.
-func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string) (int, error) {
+// ocrEngine may be nil to disable OCR.
+func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string, ocrEngine *ndlocr.Engine) (int, error) {
 	if err := os.MkdirAll(savePath, 0755); err != nil {
 		return 0, fmt.Errorf("create save directory: %w", err)
 	}
@@ -179,7 +195,11 @@ func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string
 
 	if format == "application/pdf" {
 		outPath := filepath.Join(savePath, fmt.Sprintf("scan_%s.pdf", timestamp))
-		if err := WritePDF(pages, dpi, isBW, outPath); err != nil {
+		data, err := generatePDFData(pages, dpi, isBW, ocrEngine)
+		if err != nil {
+			return len(pages), fmt.Errorf("generate PDF: %w", err)
+		}
+		if err := os.WriteFile(outPath, data, 0644); err != nil {
 			return len(pages), fmt.Errorf("write PDF: %w", err)
 		}
 		slog.Info("scan saved as PDF", "path", outPath, "pages", len(pages))
@@ -205,7 +225,8 @@ func RunSaveJob(sc *Scanner, cfg vens.ScanConfig, format string, savePath string
 }
 
 // RunFTPJob executes a scan and uploads the result to an FTP server.
-func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Settings) (int, error) {
+// ocrEngine may be nil to disable OCR.
+func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Settings, ocrEngine *ndlocr.Engine) (int, error) {
 	host := s.FTPHost
 	if _, _, err := net.SplitHostPort(host); err != nil {
 		host = net.JoinHostPort(host, "21")
@@ -243,20 +264,9 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 	isBW := cfg.ColorMode == vens.ColorBW
 
 	if format == "application/pdf" {
-		tmpFile, err := os.CreateTemp("", "scan_*.pdf")
+		data, err := generatePDFData(pages, dpi, isBW, ocrEngine)
 		if err != nil {
-			return len(pages), fmt.Errorf("create temp file: %w", err)
-		}
-		tmpPath := tmpFile.Name()
-		tmpFile.Close()
-		defer os.Remove(tmpPath)
-
-		if err := WritePDF(pages, dpi, isBW, tmpPath); err != nil {
-			return len(pages), fmt.Errorf("write PDF: %w", err)
-		}
-		data, err := os.ReadFile(tmpPath)
-		if err != nil {
-			return len(pages), fmt.Errorf("read temp PDF: %w", err)
+			return len(pages), fmt.Errorf("generate PDF: %w", err)
 		}
 		remoteName := fmt.Sprintf("scan_%s.pdf", timestamp)
 		if err := conn.Stor(remoteName, bytes.NewReader(data)); err != nil {
@@ -284,7 +294,8 @@ func RunFTPJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Setting
 }
 
 // RunPaperlessJob executes a scan and uploads the result to Paperless-ngx.
-func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Settings) (int, error) {
+// ocrEngine may be nil to disable OCR.
+func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.Settings, ocrEngine *ndlocr.Engine) (int, error) {
 	baseURL := strings.TrimRight(s.PaperlessURL, "/")
 
 	slog.Info("button scan starting (Paperless-ngx)", "format", format, "url", baseURL)
@@ -306,20 +317,9 @@ func RunPaperlessJob(sc *Scanner, cfg vens.ScanConfig, format string, s config.S
 
 	// PDF: upload as single document
 	if format == "application/pdf" {
-		tmpFile, err := os.CreateTemp("", "scan_*.pdf")
+		docData, err := generatePDFData(pages, dpi, isBW, ocrEngine)
 		if err != nil {
-			return len(pages), fmt.Errorf("create temp file: %w", err)
-		}
-		tmpPath := tmpFile.Name()
-		tmpFile.Close()
-		defer os.Remove(tmpPath)
-
-		if err := WritePDF(pages, dpi, isBW, tmpPath); err != nil {
-			return len(pages), fmt.Errorf("write PDF: %w", err)
-		}
-		docData, err := os.ReadFile(tmpPath)
-		if err != nil {
-			return len(pages), fmt.Errorf("read temp PDF: %w", err)
+			return len(pages), fmt.Errorf("generate PDF: %w", err)
 		}
 		filename := fmt.Sprintf("scan_%s.pdf", timestamp)
 		if err := uploadToPaperless(baseURL, s.PaperlessToken, filename, docData); err != nil {

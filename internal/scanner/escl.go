@@ -19,6 +19,7 @@ import (
 
 	"github.com/mzyy94/airscap/internal/config"
 	"github.com/mzyy94/airscap/internal/vens"
+	"github.com/mzyy94/airscap/ndlocr"
 )
 
 // ESCLAdapter implements abstract.Scanner for ScanSnap hardware.
@@ -27,6 +28,7 @@ type ESCLAdapter struct {
 	scanner          *Scanner
 	listenPort       int
 	settings         *config.Store
+	ocrEngine        *ndlocr.Engine // optional OCR engine (nil = no OCR)
 	caps             *abstract.ScannerCapabilities
 	adfEmpty         bool            // true after a scan session completes (ADF likely exhausted)
 	blankPageRemoval bool            // controlled by eSCL BlankPageDetectionAndRemoval
@@ -39,8 +41,9 @@ type ESCLAdapter struct {
 }
 
 // NewESCLAdapter creates an eSCL adapter wrapping the given Scanner.
-func NewESCLAdapter(s *Scanner, listenPort int, settings *config.Store) *ESCLAdapter {
-	a := &ESCLAdapter{scanner: s, listenPort: listenPort, settings: settings, blankPageRemoval: true}
+// ocrEngine may be nil to disable OCR.
+func NewESCLAdapter(s *Scanner, listenPort int, settings *config.Store, ocrEngine *ndlocr.Engine) *ESCLAdapter {
+	a := &ESCLAdapter{scanner: s, listenPort: listenPort, settings: settings, ocrEngine: ocrEngine, blankPageRemoval: true}
 	a.caps = a.buildCapabilities()
 	return a
 }
@@ -225,7 +228,8 @@ func (a *ESCLAdapter) Scan(ctx context.Context, req abstract.ScannerRequest) (ab
 	}
 	// PDF output: collect all pages and generate a single PDF document
 	if req.DocumentFormat == "application/pdf" {
-		return &pdfDocument{res: res, session: session, adapter: a, colorMode: cfg.ColorMode}, nil
+		ocrEnabled := a.ocrEngine != nil && a.settings != nil && a.settings.Get().OCRForAirscan
+		return &pdfDocument{res: res, session: session, adapter: a, colorMode: cfg.ColorMode, ocrEngine: a.ocrEngine, ocrEnabled: ocrEnabled}, nil
 	}
 
 	// Reject incompatible format+colorMode combinations (eSCL spec: 409 Conflict)
@@ -545,11 +549,13 @@ func (f *scanFile) Format() string { return f.format }
 // On the first call to Next(), it pulls all pages from the scanner,
 // generates a PDF in memory, and returns it as a single DocumentFile.
 type pdfDocument struct {
-	res       abstract.Resolution
-	session   *vens.ScanSession
-	adapter   *ESCLAdapter
-	colorMode vens.ColorMode
-	done      bool
+	res        abstract.Resolution
+	session    *vens.ScanSession
+	adapter    *ESCLAdapter
+	colorMode  vens.ColorMode
+	ocrEngine  *ndlocr.Engine
+	ocrEnabled bool
+	done       bool
 }
 
 func (d *pdfDocument) Resolution() abstract.Resolution { return d.res }
@@ -616,7 +622,19 @@ func (d *pdfDocument) Next() (abstract.DocumentFile, error) {
 	}
 	isBW := d.colorMode == vens.ColorBW
 
-	data, err := GeneratePDF(pages, dpi, isBW)
+	var (
+		data []byte
+		err  error
+	)
+	if d.ocrEnabled && d.ocrEngine != nil {
+		data, err = GenerateOCRPDF(context.Background(), pages, dpi, isBW, d.ocrEngine)
+		if err != nil {
+			slog.Warn("OCR PDF generation failed, falling back to plain PDF", "err", err)
+			data, err = GeneratePDF(pages, dpi, isBW)
+		}
+	} else {
+		data, err = GeneratePDF(pages, dpi, isBW)
+	}
 	if err != nil {
 		d.adapter.mu.Lock()
 		d.adapter.scanning = false
@@ -625,7 +643,7 @@ func (d *pdfDocument) Next() (abstract.DocumentFile, error) {
 		return nil, err
 	}
 
-	slog.Info("PDF generated for eSCL", "pages", len(pages), "size", len(data))
+	slog.Info("PDF generated for eSCL", "pages", len(pages), "size", len(data), "ocr", d.ocrEnabled)
 
 	return &scanFile{Reader: bytes.NewReader(data), format: "application/pdf"}, nil
 }

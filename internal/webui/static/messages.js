@@ -88,6 +88,13 @@ const MESSAGES = {
   paper_business_card: { en: 'Biz Card',   ja: '名刺' },
   paper_postcard:   { en: 'Postcard',      ja: 'はがき' },
 
+  // OCR settings
+  ocrSettings:           { en: 'OCR Settings',                ja: 'OCR 設定' },
+  ocrForButtonScan:      { en: 'OCR for button scan',         ja: 'ボタンスキャンに OCR 適用' },
+  ocrForButtonScanHelp:  { en: 'Add searchable text layer to PDF when scanning via the physical button.', ja: 'スキャナのボタンでスキャンした PDF に検索可能なテキストレイヤーを追加する。' },
+  ocrForAirscan:         { en: 'OCR for AirScan',             ja: 'AirScan に OCR 適用' },
+  ocrForAirscanHelp:     { en: 'Add searchable text layer to PDF when scanning via eSCL/AirScan clients.', ja: 'eSCL/AirScan クライアントからスキャンした PDF に検索可能なテキストレイヤーを追加する。' },
+
   // AirScan settings
   airscanSettings:           { en: 'AirScan Settings',        ja: 'AirScan 設定' },
   airscanForcePaperAuto:     { en: 'Auto paper size detect',  ja: '用紙サイズ自動検出' },

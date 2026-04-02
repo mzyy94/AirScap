@@ -2,18 +2,22 @@ package scanner
 
 import (
 	"bytes"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	"image/png"
+	"log/slog"
 	"os"
+	"strings"
 
 	"codeberg.org/go-pdf/fpdf"
 	"golang.org/x/image/tiff"
 
 	"github.com/mzyy94/airscap/internal/vens"
+	"github.com/mzyy94/airscap/ndlocr"
 )
 
 // WritePDF combines scanned pages (JPEG or TIFF) into a single PDF file.
@@ -81,6 +85,142 @@ func GeneratePDF(pages []vens.Page, dpi int, isBW bool) ([]byte, error) {
 		return nil, fmt.Errorf("generate PDF: %w", err)
 	}
 	return out.Bytes(), nil
+}
+
+// GenerateOCRPDF combines scanned pages into a searchable PDF with transparent text overlay.
+// Each page is processed through the OCR engine to extract text blocks.
+// If OCR fails for a page, the page is included without a text layer.
+func GenerateOCRPDF(ctx context.Context, pages []vens.Page, dpi int, isBW bool, engine *ndlocr.Engine) ([]byte, error) {
+	if len(pages) == 0 {
+		return nil, fmt.Errorf("no pages to write")
+	}
+	if dpi <= 0 {
+		dpi = 300
+	}
+
+	pdf := fpdf.New("P", "mm", "", "")
+	pdf.SetAutoPageBreak(false, 0)
+	pdf.AddUTF8FontFromBytes("ja", "", ndlocr.EmbeddedFont)
+
+	for i, p := range pages {
+		// Decode full image for OCR
+		var img image.Image
+		var err error
+		if isBW {
+			img, err = tiff.Decode(bytes.NewReader(p.JPEG))
+		} else {
+			img, _, err = image.Decode(bytes.NewReader(p.JPEG))
+		}
+		if err != nil {
+			return nil, fmt.Errorf("decode page %d: %w", i+1, err)
+		}
+
+		bounds := img.Bounds()
+
+		// Use actual DPI embedded in the image data when available
+		pageDPI := dpi
+		if d := detectImageDPI(p.JPEG); d > 0 {
+			pageDPI = d
+		} else if p.PixelSize != nil && p.PixelSize.XRes > 0 {
+			pageDPI = p.PixelSize.XRes
+		}
+
+		pxToMM := 25.4 / float64(pageDPI)
+		widthMM := float64(bounds.Dx()) * pxToMM
+		heightMM := float64(bounds.Dy()) * pxToMM
+
+		pdf.AddPageFormat("P", fpdf.SizeType{Wd: widthMM, Ht: heightMM})
+
+		// Embed image
+		name := fmt.Sprintf("page%d", i)
+		if isBW {
+			palImg := toBitonalPNG(img)
+			var buf bytes.Buffer
+			if err := png.Encode(&buf, palImg); err != nil {
+				return nil, fmt.Errorf("encode page %d PNG: %w", i+1, err)
+			}
+			pdf.RegisterImageOptionsReader(name, fpdf.ImageOptions{ImageType: "PNG"}, &buf)
+		} else {
+			pdf.RegisterImageOptionsReader(name, fpdf.ImageOptions{ImageType: "JPEG"}, bytes.NewReader(p.JPEG))
+		}
+		pdf.ImageOptions(name, 0, 0, widthMM, heightMM, false, fpdf.ImageOptions{}, 0, "")
+
+		// OCR: recognize text and overlay
+		blocks, err := engine.Recognize(ctx, img)
+		if err != nil {
+			slog.Warn("OCR failed for page, skipping text layer", "page", i+1, "err", err)
+			continue
+		}
+		overlayOCRText(pdf, blocks, pxToMM)
+	}
+
+	var out bytes.Buffer
+	if err := pdf.Output(&out); err != nil {
+		return nil, fmt.Errorf("generate PDF: %w", err)
+	}
+	return out.Bytes(), nil
+}
+
+// overlayOCRText renders transparent text blocks onto the current PDF page.
+// pxToMM converts pixel coordinates from OCR bounding boxes to mm.
+func overlayOCRText(pdf *fpdf.Fpdf, blocks []ndlocr.TextBlock, pxToMM float64) {
+	const mmToPt = 72.0 / 25.4
+
+	pdf.SetAlpha(0.0, "Normal")
+	pdf.SetTextColor(0, 0, 0)
+
+	for _, b := range blocks {
+		x1 := float64(b.BoundingBox[0][0]) * pxToMM
+		y1 := float64(b.BoundingBox[0][1]) * pxToMM
+		x2 := float64(b.BoundingBox[2][0]) * pxToMM
+		y2 := float64(b.BoundingBox[2][1]) * pxToMM
+		boxW := x2 - x1
+		boxH := y2 - y1
+
+		if boxW <= 0 || boxH <= 0 || b.Text == "" {
+			continue
+		}
+
+		isVertical := strings.HasSuffix(b.Category, "vertical")
+		runes := []rune(b.Text)
+		nChars := len(runes)
+		if nChars == 0 {
+			continue
+		}
+
+		if isVertical {
+			// Vertical: font size fits box width, chars spaced over box height
+			fontMM := boxW
+			charH := boxH / float64(nChars)
+			if charH < fontMM {
+				fontMM = charH
+			}
+			if fontMM <= 0 {
+				fontMM = 0.1
+			}
+			pdf.SetFont("ja", "", fontMM*mmToPt)
+			cx := x1 + (boxW-fontMM)/2
+			for j, r := range runes {
+				cy := y1 + float64(j)*charH + fontMM
+				pdf.Text(cx, cy, string(r))
+			}
+		} else {
+			// Horizontal: font size = box height, scaled to fit box width
+			fontMM := boxH
+			if fontMM <= 0 {
+				fontMM = 0.1
+			}
+			pdf.SetFont("ja", "", fontMM*mmToPt)
+			sw := pdf.GetStringWidth(b.Text) // returns mm
+			if sw > 0 {
+				fontMM *= boxW / sw
+				pdf.SetFont("ja", "", fontMM*mmToPt)
+			}
+			pdf.Text(x1, y1+fontMM, b.Text)
+		}
+	}
+
+	pdf.SetAlpha(1.0, "Normal")
 }
 
 // detectImageDPI extracts the X resolution (DPI) from image data.
