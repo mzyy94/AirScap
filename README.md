@@ -13,6 +13,7 @@
   <a href="#クイックスタート">クイックスタート</a>&ensp;&bull;&ensp;
   <a href="#web-ui">Web UI</a>&ensp;&bull;&ensp;
   <a href="#設定">設定</a>&ensp;&bull;&ensp;
+  <a href="#ocr-ツール">OCR</a>&ensp;&bull;&ensp;
   <a href="protocol.md">プロトコル仕様</a>&ensp;&bull;&ensp;
   <a href="README.en.md">🇺🇸 English</a>
 </p>
@@ -53,6 +54,7 @@ flowchart TB
 - **物理ボタン対応** &mdash; スキャナ本体のボタンを押してスキャンジョブを実行。保存先はローカル / FTP / [Paperless-ngx] から選択
 - **Web UI** &mdash; ブラウザから設定変更やステータス確認が可能（英語 / 日本語）
 - **シングルバイナリ** &mdash; Pure Go、CGO 不要でクロスコンパイル可能。systemd サービスユニット同梱
+- **OCR ツール同梱** &mdash; スキャン画像から透明テキスト付き検索可能 PDF を生成する `ndlocr-pdf` コマンドを付属
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
@@ -185,6 +187,74 @@ scanimage -L
 scanimage --device 'airscan:e0:ScanSnap iX500' --format=jpeg -o scan.jpg
 ```
 
+## OCR ツール
+
+同梱の `ndlocr-pdf` は、スキャン画像に日本語 OCR を適用し、テキスト選択・検索が可能な PDF を生成するコマンドラインツールです。[NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite) を Go で再実装したもので、ONNX Runtime を用いたレイアウト検出（DEIM）と文字認識（PARSeq）を行います。
+
+### 必要なもの
+
+- [ONNX Runtime](https://onnxruntime.ai/) 共有ライブラリ（`libonnxruntime.dylib` / `libonnxruntime.so`）
+- ndlocr-lite モデルファイル（サブモジュールとして同梱）
+
+```bash
+# macOS
+brew install onnxruntime
+
+# Linux (Ubuntu/Debian)
+apt install libonnx-dev
+
+# サブモジュールの取得
+git submodule update --init
+```
+
+### ビルドと使い方
+
+```bash
+# ビルド
+go build -o ndlocr-pdf ./cmd/ndlocr-pdf/
+
+# 単一画像 → 検索可能 PDF
+./ndlocr-pdf --sourceimg scan.jpg --output output.pdf
+
+# ディレクトリ内の全画像 → 1 つの PDF にまとめる
+./ndlocr-pdf --sourcedir ./scanned/ --output book.pdf
+
+# JSON/TXT も同時出力
+./ndlocr-pdf --sourcedir ./scanned/ --output book.pdf --json --txt
+```
+
+| フラグ | デフォルト | 説明 |
+|--------|-----------|------|
+| `--sourceimg` | | 入力画像ファイル |
+| `--sourcedir` | | 入力画像ディレクトリ |
+| `--output` | （必須） | 出力 PDF パス |
+| `--device` | `cpu` | 推論デバイス（`cpu` / `cuda`） |
+| `--modeldir` | `ndlocr-lite/src` | モデルディレクトリ |
+| `--json` | `false` | 画像ごとに JSON 出力 |
+| `--txt` | `false` | 画像ごとにテキスト出力 |
+
+対応画像形式: JPEG, PNG, BMP, TIFF, JPEG 2000
+
+### ライブラリとして使用
+
+`ndlocr` パッケージは Go ライブラリとしても利用できます。
+
+```go
+import "github.com/mzyy94/airscap/ndlocr"
+
+engine, err := ndlocr.NewEngine(ndlocr.Config{
+    ModelDir:    "ndlocr-lite/src",
+    RuntimePath: "/opt/homebrew/lib/libonnxruntime.dylib",
+    Device:      "cpu",
+})
+defer engine.Close()
+
+blocks, err := engine.Recognize(ctx, img)
+for _, b := range blocks {
+    fmt.Printf("%s (%.2f)\n", b.Text, b.Confidence)
+}
+```
+
 ## プロトコル
 
 AirScap は **VENS** プロトコルを実装しています。これは富士通/リコーの ScanSnap スキャナが Wi-Fi 通信で使用する独自バイナリプロトコルで、公式アプリケーションのパケットキャプチャを解析して実装しました。
@@ -208,6 +278,9 @@ AirScap は **VENS** プロトコルを実装しています。これは富士�
 | [zeroconf](https://github.com/grandcat/zeroconf) | MIT |
 | [jlaffaye/ftp](https://github.com/jlaffaye/ftp) | ISC |
 | [golang.org/x/image](https://pkg.go.dev/golang.org/x/image) | BSD 3-Clause |
+| [onnxruntime-purego](https://github.com/shota3506/onnxruntime-purego) | Apache 2.0 |
+| [yaml.v3](https://github.com/go-yaml/yaml) | MIT / Apache 2.0 |
+| [Noto Sans JP](https://fonts.google.com/noto/specimen/Noto+Sans+JP)（メトリクスのみ埋め込み） | OFL 1.1 |
 | [Alpine.js](https://alpinejs.dev/) | MIT |
 | [Bulma](https://bulma.io/) | MIT |
 | [Feather Icons](https://feathericons.com/) | MIT |
