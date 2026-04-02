@@ -54,7 +54,7 @@ flowchart TB
 - **Physical button support** &mdash; Press the scanner button to trigger a scan job. Save to local folder / FTP / [Paperless-ngx] from your choice
 - **Web UI** &mdash; Configure settings and monitor status from your browser (English / Japanese)
 - **Single binary** &mdash; Pure Go, no CGO required, cross-compilable. Ships with a systemd service unit
-- **Bundled OCR tool** &mdash; Includes `ndlocr-pdf` command that generates searchable PDFs with transparent text from scanned images
+- **OCR support** &mdash; Built-in Japanese OCR engine generates searchable PDFs directly during scanning. Also includes a standalone `ndlocr-pdf` command
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
@@ -151,6 +151,7 @@ Access the built-in management interface at `http://<host>:8080/ui/`.
 - **Button Scan Settings** &mdash; Color mode, resolution, paper size, output format, JPEG quality, duplex, blank page removal, bleed-through reduction
 - **Save Destination** &mdash; Configure local folder / FTP / Paperless-ngx for button scans
 - **AirScan Settings** &mdash; Auto paper size detect, bleed-through reduction, B&W density overrides for AirScan clients
+- **OCR Settings** &mdash; Toggle OCR on/off for eSCL and button scans independently (shown when OCR engine is available)
 - **eSCL Endpoint** &mdash; URL for manual eSCL client configuration
 - **i18n** &mdash; English / Japanese toggle
 
@@ -167,9 +168,12 @@ Scanner discovery and startup settings are configured via environment variables.
 | `AIRSCAP_DEVICE_NAME` | from scanner | mDNS display name | |
 | `AIRSCAP_LOG_LEVEL` | `info` | Log level (`debug` / `info` / `warn` / `error`) | |
 | `AIRSCAP_DATA_DIR` | no persistence | Directory for persistent settings | \*\* |
+| `AIRSCAP_OCR_MODEL_DIR` | &mdash; | Path to OCR model directory | \*\*\* |
+| `AIRSCAP_OCR_DEVICE` | `cpu` | OCR inference device (`cpu` / `cuda`) | |
 
 \* If you have changed the default password, specify the password you set. Use one or the other.
 \*\* When running under systemd, settings are persisted to `STATE_DIRECTORY` even if unset.
+\*\*\* When set, the OCR engine is enabled and can add transparent text layers to PDF output. Requires ONNX Runtime and ndlocr-lite model files.
 
 See [`dist/env.example`](dist/env.example) for a full template.
 
@@ -189,7 +193,22 @@ scanimage --device 'airscan:e0:ScanSnap iX500' --format=jpeg -o scan.jpg
 
 ## OCR Tool
 
-The bundled `ndlocr-pdf` command applies Japanese OCR to scanned images and generates searchable PDFs with selectable text. It is a Go reimplementation of [NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite), using ONNX Runtime for layout detection (DEIM) and character recognition (PARSeq).
+AirScap includes a built-in Japanese OCR engine, a Go reimplementation of [NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite), using ONNX Runtime for layout detection (DEIM) and character recognition (PARSeq).
+
+### Integrated OCR
+
+Set `AIRSCAP_OCR_MODEL_DIR` to enable the OCR engine. You can toggle OCR on/off for eSCL scans and button scans independently from the Web UI. When enabled, PDF output automatically includes a transparent text layer for searchable PDFs.
+
+```bash
+# Start with OCR enabled
+AIRSCAP_OCR_MODEL_DIR=./ndlocr-lite/src ./airscap
+```
+
+If OCR processing fails for a page, it falls back to a plain image PDF with a warning log.
+
+### Standalone `ndlocr-pdf` Command
+
+The bundled `ndlocr-pdf` command applies Japanese OCR to scanned images and generates searchable PDFs with selectable text.
 
 ### Prerequisites
 

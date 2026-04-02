@@ -54,7 +54,7 @@ flowchart TB
 - **物理ボタン対応** &mdash; スキャナ本体のボタンを押してスキャンジョブを実行。保存先はローカル / FTP / [Paperless-ngx] から選択
 - **Web UI** &mdash; ブラウザから設定変更やステータス確認が可能（英語 / 日本語）
 - **シングルバイナリ** &mdash; Pure Go、CGO 不要でクロスコンパイル可能。systemd サービスユニット同梱
-- **OCR ツール同梱** &mdash; スキャン画像から透明テキスト付き検索可能 PDF を生成する `ndlocr-pdf` コマンドを付属
+- **OCR 対応** &mdash; 日本語 OCR エンジンを内蔵し、スキャン時に検索可能な PDF を直接生成。スタンドアロンの `ndlocr-pdf` コマンドも付属
 
 [Paperless-ngx]: https://github.com/paperless-ngx/paperless-ngx
 
@@ -151,6 +151,7 @@ AIRSCAP_PASSWORD=0700 AIRSCAP_SCANNER_IP=192.168.1.100 ./airscap
 - **ボタンスキャン設定** &mdash; カラーモード、解像度、用紙サイズ、出力形式、JPEG 画質、両面、白紙スキップ、裏写り軽減
 - **保存先** &mdash; ローカルフォルダ / FTP / Paperless-ngx のボタンスキャン保存先設定
 - **AirScan 設定** &mdash; 用紙サイズ自動検出、裏写り軽減、白黒濃度の AirScan クライアント向けオーバーライド
+- **OCR 設定** &mdash; eSCL / ボタンスキャンそれぞれの OCR 有効・無効切り替え（OCR エンジン有効時のみ表示）
 - **eSCL エンドポイント** &mdash; eSCL クライアント手動設定用の URL
 - **多言語対応** &mdash; 英語 / 日本語切り替え
 
@@ -167,9 +168,12 @@ AIRSCAP_PASSWORD=0700 AIRSCAP_SCANNER_IP=192.168.1.100 ./airscap
 | `AIRSCAP_DEVICE_NAME` | スキャナから取得 | mDNS 表示名 | |
 | `AIRSCAP_LOG_LEVEL` | `info` | ログレベル（`debug` / `info` / `warn` / `error`） | |
 | `AIRSCAP_DATA_DIR` | 永続化しない | 設定永続化ディレクトリ | \*\* |
+| `AIRSCAP_OCR_MODEL_DIR` | &mdash; | OCR モデルディレクトリのパス | \*\*\* |
+| `AIRSCAP_OCR_DEVICE` | `cpu` | OCR 推論デバイス（`cpu` / `cuda`） | |
 
 \* デフォルトパスワードから変更している場合は、設定したパスワードを指定する必要があります。いずれか片方で指定してください。
 \*\* systemdで起動している場合は、未指定でも `STATE_DIRECTORY` に保存され永続化されます。
+\*\*\* 指定すると OCR エンジンが有効になり、PDF 出力時に透明テキストレイヤーを追加できます。ONNX Runtime と ndlocr-lite モデルファイルが必要です。
 
 テンプレートは [`dist/env.example`](dist/env.example) を参照。
 
@@ -189,7 +193,22 @@ scanimage --device 'airscan:e0:ScanSnap iX500' --format=jpeg -o scan.jpg
 
 ## OCR ツール
 
-同梱の `ndlocr-pdf` は、スキャン画像に日本語 OCR を適用し、テキスト選択・検索が可能な PDF を生成するコマンドラインツールです。[NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite) を Go で再実装したもので、ONNX Runtime を用いたレイアウト検出（DEIM）と文字認識（PARSeq）を行います。
+AirScap は [NDLOCR-Lite](https://github.com/ndl-lab/ndlocr-lite) を Go で再実装した日本語 OCR エンジンを内蔵しており、ONNX Runtime を用いたレイアウト検出（DEIM）と文字認識（PARSeq）を行います。
+
+### 統合 OCR
+
+`AIRSCAP_OCR_MODEL_DIR` を指定して起動すると、OCR エンジンが有効になります。Web UI から eSCL スキャン・ボタンスキャンそれぞれで OCR の有効・無効を切り替えできます。有効にすると、PDF 出力時にスキャン画像を自動認識して透明テキストレイヤーを付加した検索可能 PDF を生成します。
+
+```bash
+# OCR 有効で起動
+AIRSCAP_OCR_MODEL_DIR=./ndlocr-lite/src ./airscap
+```
+
+OCR 処理に失敗した場合はログ出力の上、従来の画像のみ PDF にフォールバックします。
+
+### スタンドアロン `ndlocr-pdf` コマンド
+
+スキャン画像に日本語 OCR を適用し、テキスト選択・検索が可能な PDF を生成するコマンドラインツールです。
 
 ### 必要なもの
 
