@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"syscall"
@@ -123,8 +124,9 @@ func main() {
 			slog.Warn("OCR model check failed, OCR disabled", "err", err)
 		} else {
 			engine, err := ndlocr.NewEngine(ndlocr.Config{
-				ModelDir: modelDir,
-				Device:   ocrDevice,
+				ModelDir:    modelDir,
+				Device:      ocrDevice,
+				RuntimePath: findRuntimeLib(),
 			})
 			if err != nil {
 				slog.Warn("OCR engine initialization failed, OCR disabled", "err", err)
@@ -374,6 +376,31 @@ func parseLogLevel(s string) slog.Level {
 	default:
 		return slog.LevelInfo
 	}
+}
+
+func findRuntimeLib() string {
+	if p := os.Getenv("ONNXRUNTIME_LIB"); p != "" {
+		return p
+	}
+	var candidates []string
+	switch runtime.GOOS {
+	case "darwin":
+		candidates = []string{
+			"/opt/homebrew/lib/libonnxruntime.dylib",
+			"/usr/local/lib/libonnxruntime.dylib",
+		}
+	case "linux":
+		candidates = []string{
+			"/usr/local/lib/libonnxruntime.so",
+			"/usr/lib/libonnxruntime.so",
+		}
+	}
+	for _, c := range candidates {
+		if _, err := os.Stat(c); err == nil {
+			return c
+		}
+	}
+	return ""
 }
 
 // responseRecorder captures the status code for logging.
