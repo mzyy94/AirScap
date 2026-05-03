@@ -20,7 +20,7 @@ type PARSEQ struct {
 }
 
 // NewPARSEQ creates a new PARSeq recognizer.
-// Input dimensions are parsed from the model filename (e.g. parseq-ndl-16x256-30-...).
+// Input dimensions are parsed from the model filename (e.g. parseq-ndl-24x256-30-...).
 func NewPARSEQ(runtime *ort.Runtime, env *ort.Env, modelPath string, charList []string, device string) (*PARSEQ, error) {
 	opts := &ort.SessionOptions{
 		IntraOpNumThreads: 1,
@@ -49,7 +49,7 @@ func NewPARSEQ(runtime *ort.Runtime, env *ort.Env, modelPath string, charList []
 	}, nil
 }
 
-// parsePARSeqDims extracts H and W from a filename like "parseq-ndl-16x256-30-...".
+// parsePARSeqDims extracts H and W from a filename like "parseq-ndl-24x256-30-...".
 func parsePARSeqDims(modelPath string) (int, int, error) {
 	base := filepath.Base(modelPath)
 	parts := strings.Split(base, "-")

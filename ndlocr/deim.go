@@ -76,7 +76,8 @@ func (d *DEIM) Detect(ctx context.Context, imgData []float32, imgH, imgW int) ([
 	// Pad to square (matching Python preprocess)
 	padded, paddedSize := PadToSquare(imgData, imgH, imgW)
 
-	resized := ResizeHWC(padded, paddedSize, paddedSize, int(d.inputH), int(d.inputW), xdraw.CatmullRom)
+	// Use BiLinear to match upstream ndlocr-lite v1.2.0 (PIL.Image.resize default).
+	resized := ResizeHWC(padded, paddedSize, paddedSize, int(d.inputH), int(d.inputW), xdraw.BiLinear)
 	nchw := PreprocessDEIM(resized, int(d.inputH), int(d.inputW))
 
 	// Create input tensors
@@ -167,6 +168,13 @@ func (d *DEIM) postprocess(classIDs []int64, bboxes []float32, scores []float32,
 		x2 := int32(bboxes[i*4+2] * scale)
 		y2 := int32(bboxes[i*4+3] * scale)
 
+		// Clip to padded image bounds (matches upstream ndlocr-lite a081a6f).
+		ps := int32(paddedSize)
+		x1 = clipInt32(x1, 0, ps)
+		x2 = clipInt32(x2, 0, ps)
+		y1 = clipInt32(y1, 0, ps)
+		y2 = clipInt32(y2, 0, ps)
+
 		detections = append(detections, Detection{
 			ClassIndex:    classIndex,
 			Confidence:    scores[i],
@@ -182,6 +190,17 @@ func (d *DEIM) postprocess(classIDs []int64, bboxes []float32, scores []float32,
 // Classes returns the class mapping.
 func (d *DEIM) Classes() map[int]string {
 	return d.classes
+}
+
+// clipInt32 clamps v to [lo, hi].
+func clipInt32(v, lo, hi int32) int32 {
+	if v < lo {
+		return lo
+	}
+	if v > hi {
+		return hi
+	}
+	return v
 }
 
 // Close frees resources.

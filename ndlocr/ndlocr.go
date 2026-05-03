@@ -60,9 +60,9 @@ func RuntimeAvailable(runtimePath string) bool {
 // requiredFiles lists the model and config files needed for OCR, relative to ModelDir.
 var requiredFiles = []string{
 	"model/deim-s-1024x1024.onnx",
-	"model/parseq-ndl-16x256-30-tiny-192epoch-tegaki3.onnx",
-	"model/parseq-ndl-16x384-50-tiny-146epoch-tegaki2.onnx",
-	"model/parseq-ndl-16x768-100-tiny-165epoch-tegaki2.onnx",
+	"model/parseq-ndl-24x256-30-tiny-189epoch-tegaki3-r8data-202604.onnx",
+	"model/parseq-ndl-24x384-50-tiny-300epoch-tegaki3-r8data-202604.onnx",
+	"model/parseq-ndl-24x768-100-tiny-153epoch-tegaki3-r8data-202604.onnx",
 	"config/ndl.yaml",
 	"config/NDLmoji.yaml",
 }
@@ -106,9 +106,9 @@ func NewEngine(cfg Config) (*Engine, error) {
 
 	detWeights := filepath.Join(modelDir, "deim-s-1024x1024.onnx")
 	detClasses := filepath.Join(configDir, "ndl.yaml")
-	recWeights30 := filepath.Join(modelDir, "parseq-ndl-16x256-30-tiny-192epoch-tegaki3.onnx")
-	recWeights50 := filepath.Join(modelDir, "parseq-ndl-16x384-50-tiny-146epoch-tegaki2.onnx")
-	recWeights100 := filepath.Join(modelDir, "parseq-ndl-16x768-100-tiny-165epoch-tegaki2.onnx")
+	recWeights30 := filepath.Join(modelDir, "parseq-ndl-24x256-30-tiny-189epoch-tegaki3-r8data-202604.onnx")
+	recWeights50 := filepath.Join(modelDir, "parseq-ndl-24x384-50-tiny-300epoch-tegaki3-r8data-202604.onnx")
+	recWeights100 := filepath.Join(modelDir, "parseq-ndl-24x768-100-tiny-153epoch-tegaki3-r8data-202604.onnx")
 	recClasses := filepath.Join(configDir, "NDLmoji.yaml")
 
 	detector, err := NewDEIM(runtime, env, detWeights, detClasses, 0.2, 0.25, 0.2, device)
