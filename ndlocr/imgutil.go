@@ -77,14 +77,27 @@ func ImageToRGB(img image.Image) ([]float32, int, int) {
 			}
 		}
 	case *image.YCbCr:
+		// Bilinear chroma upsampling for subsampled YCbCr (4:2:0 / 4:2:2 / 4:4:0).
+		// Go's image/jpeg returns chroma planes at sub-sampled resolution and
+		// COffset uses nearest-neighbor lookup, which differs from libjpeg /
+		// PIL.Image.convert("RGB") (centered MPEG-1-style sampling, smooth interp).
+		// Matching libjpeg/PIL is important for OCR accuracy on text edges.
+		hxRatio, hyRatio := chromaSubsampleRatio(src.SubsampleRatio)
+		planeStride := src.CStride
+		planeW := planeStride
+		planeH := 0
+		if planeStride > 0 {
+			planeH = len(src.Cb) / planeStride
+		}
+		ymin := bounds.Min.Y - src.Rect.Min.Y
+		xmin := bounds.Min.X - src.Rect.Min.X
 		for y := 0; y < h; y++ {
-			yi := (y+bounds.Min.Y-src.Rect.Min.Y)*src.YStride + (bounds.Min.X - src.Rect.Min.X)
+			yi := (y+ymin)*src.YStride + xmin
 			dstOff := y * w * 3
 			for x := 0; x < w; x++ {
-				ci := src.COffset(bounds.Min.X+x, bounds.Min.Y+y)
 				yy := int32(src.Y[yi])
-				cb := int32(src.Cb[ci]) - 128
-				cr := int32(src.Cr[ci]) - 128
+				cb := int32(sampleChromaBilinear(src.Cb, planeStride, planeW, planeH, x+xmin, y+ymin, hxRatio, hyRatio)) - 128
+				cr := int32(sampleChromaBilinear(src.Cr, planeStride, planeW, planeH, x+xmin, y+ymin, hxRatio, hyRatio)) - 128
 				r := yy + 91881*cr/65536
 				g := yy - 22554*cb/65536 - 46802*cr/65536
 				b := yy + 116130*cb/65536
@@ -136,6 +149,91 @@ func ImageToRGB(img image.Image) ([]float32, int, int) {
 	}
 
 	return data, h, w
+}
+
+// chromaSubsampleRatio returns the horizontal and vertical chroma subsample
+// ratios (1, 2, or 4) for a given image.YCbCrSubsampleRatio.
+func chromaSubsampleRatio(r image.YCbCrSubsampleRatio) (hx, hy int) {
+	switch r {
+	case image.YCbCrSubsampleRatio444:
+		return 1, 1
+	case image.YCbCrSubsampleRatio422:
+		return 2, 1
+	case image.YCbCrSubsampleRatio420:
+		return 2, 2
+	case image.YCbCrSubsampleRatio440:
+		return 1, 2
+	case image.YCbCrSubsampleRatio411:
+		return 4, 1
+	case image.YCbCrSubsampleRatio410:
+		return 4, 2
+	}
+	return 1, 1
+}
+
+// sampleChromaBilinear returns the bilinearly upsampled chroma value at the
+// given full-resolution Y pixel coordinate. Mirrors libjpeg/PIL behavior:
+// chroma samples are taken to be centered between Y pixels (MPEG-1 siting),
+// so chroma sample index c covers Y positions [c*ratio, (c+1)*ratio - 1] and
+// is centered at Y position c*ratio + ratio/2 - 0.5.
+//
+// We compute the chroma fractional coordinate corresponding to (x, y), find
+// the four neighbouring chroma samples and linearly blend them.
+func sampleChromaBilinear(plane []byte, stride, planeW, planeH, x, y, hxRatio, hyRatio int) byte {
+	if planeW <= 0 || planeH <= 0 {
+		return 128
+	}
+	if hxRatio == 1 && hyRatio == 1 {
+		return plane[y*stride+x]
+	}
+	// Fractional chroma coordinate (Q16 fixed-point) corresponding to (x, y).
+	// fx = (x + 0.5) / hxRatio - 0.5 == (2x + 1 - hxRatio) / (2*hxRatio)
+	fxNum := 2*x + 1 - hxRatio
+	fyNum := 2*y + 1 - hyRatio
+	twoHx := 2 * hxRatio
+	twoHy := 2 * hyRatio
+	x0 := fxNum / twoHx
+	y0 := fyNum / twoHy
+	dxNum := fxNum - x0*twoHx
+	dyNum := fyNum - y0*twoHy
+	if dxNum < 0 {
+		x0--
+		dxNum += twoHx
+	}
+	if dyNum < 0 {
+		y0--
+		dyNum += twoHy
+	}
+	x1 := x0 + 1
+	y1 := y0 + 1
+	if x0 < 0 {
+		x0 = 0
+	}
+	if y0 < 0 {
+		y0 = 0
+	}
+	if x1 >= planeW {
+		x1 = planeW - 1
+	}
+	if y1 >= planeH {
+		y1 = planeH - 1
+	}
+	if x0 >= planeW {
+		x0 = planeW - 1
+	}
+	if y0 >= planeH {
+		y0 = planeH - 1
+	}
+	a := int(plane[y0*stride+x0])
+	b := int(plane[y0*stride+x1])
+	c := int(plane[y1*stride+x0])
+	d := int(plane[y1*stride+x1])
+	// Bilinear blend in Q16 fixed-point.
+	top := a*(twoHx-dxNum) + b*dxNum
+	bot := c*(twoHx-dxNum) + d*dxNum
+	val := top*(twoHy-dyNum) + bot*dyNum
+	div := twoHx * twoHy
+	return byte((val + div/2) / div)
 }
 
 // PadToSquare pads the HWC image data to a square by adding zeros.
