@@ -18,7 +18,7 @@ var cerTestCases = []struct {
 }{
 	{"digidepo_2531162_0024.jpg", 0.08},
 	{"digidepo_3048008_0025.jpg", 0.08},
-	{"digidepo_11048278_po_geppo1803_00021.jpg", 0.02},
+	{"digidepo_11048278_po_geppo1803_00021.jpg", 0.011},
 }
 
 const modelDir = "../ndlocr-lite/src"

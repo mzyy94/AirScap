@@ -77,11 +77,14 @@ func ImageToRGB(img image.Image) ([]float32, int, int) {
 			}
 		}
 	case *image.YCbCr:
-		// Bilinear chroma upsampling for subsampled YCbCr (4:2:0 / 4:2:2 / 4:4:0).
+		// Bilinear chroma upsampling + libjpeg-compatible YCbCr -> RGB.
 		// Go's image/jpeg returns chroma planes at sub-sampled resolution and
 		// COffset uses nearest-neighbor lookup, which differs from libjpeg /
-		// PIL.Image.convert("RGB") (centered MPEG-1-style sampling, smooth interp).
-		// Matching libjpeg/PIL is important for OCR accuracy on text edges.
+		// PIL.Image.convert("RGB") (centered MPEG-1-style sampling). To match
+		// libjpeg exactly: bilinearly upsample chroma in float, round to byte
+		// (mirroring libjpeg's per-byte chroma plane after upsampling), then
+		// apply stdlib's fixed-point YCbCr -> RGB conversion (which uses the
+		// same 0x10101 / table-based math libjpeg does).
 		hxRatio, hyRatio := chromaSubsampleRatio(src.SubsampleRatio)
 		planeStride := src.CStride
 		planeW := planeStride
@@ -91,34 +94,31 @@ func ImageToRGB(img image.Image) ([]float32, int, int) {
 		}
 		ymin := bounds.Min.Y - src.Rect.Min.Y
 		xmin := bounds.Min.X - src.Rect.Min.X
+		clipByte := func(v int32) float32 {
+			if v < 0 {
+				return 0
+			}
+			if v > 255 {
+				return 255
+			}
+			return float32(v)
+		}
 		for y := 0; y < h; y++ {
 			yi := (y+ymin)*src.YStride + xmin
 			dstOff := y * w * 3
 			for x := 0; x < w; x++ {
 				yy := int32(src.Y[yi])
-				cb := int32(sampleChromaBilinear(src.Cb, planeStride, planeW, planeH, x+xmin, y+ymin, hxRatio, hyRatio)) - 128
-				cr := int32(sampleChromaBilinear(src.Cr, planeStride, planeW, planeH, x+xmin, y+ymin, hxRatio, hyRatio)) - 128
-				r := yy + 91881*cr/65536
-				g := yy - 22554*cb/65536 - 46802*cr/65536
-				b := yy + 116130*cb/65536
-				if r < 0 {
-					r = 0
-				} else if r > 255 {
-					r = 255
-				}
-				if g < 0 {
-					g = 0
-				} else if g > 255 {
-					g = 255
-				}
-				if b < 0 {
-					b = 0
-				} else if b > 255 {
-					b = 255
-				}
-				data[dstOff+0] = float32(r)
-				data[dstOff+1] = float32(g)
-				data[dstOff+2] = float32(b)
+				cb := int32(roundByteF(sampleChromaBilinearF(src.Cb, planeStride, planeW, planeH, x+xmin, y+ymin, hxRatio, hyRatio))) - 128
+				cr := int32(roundByteF(sampleChromaBilinearF(src.Cr, planeStride, planeW, planeH, x+xmin, y+ymin, hxRatio, hyRatio))) - 128
+				// libjpeg-style YCbCr -> RGB: chroma table values are
+				// floor((coef * (Chroma - 128) + 32768) / 65536), then added to Y.
+				// Floor division semantics (asr16) matter for negative values.
+				rOff := asr16(91881*cr + 32768)
+				gOff := asr16(-22554*cb - 46802*cr + 32768)
+				bOff := asr16(116130*cb + 32768)
+				data[dstOff+0] = clipByte(yy + rOff)
+				data[dstOff+1] = clipByte(yy + gOff)
+				data[dstOff+2] = clipByte(yy + bOff)
 				yi++
 				dstOff += 3
 			}
@@ -171,39 +171,47 @@ func chromaSubsampleRatio(r image.YCbCrSubsampleRatio) (hx, hy int) {
 	return 1, 1
 }
 
-// sampleChromaBilinear returns the bilinearly upsampled chroma value at the
-// given full-resolution Y pixel coordinate. Mirrors libjpeg/PIL behavior:
-// chroma samples are taken to be centered between Y pixels (MPEG-1 siting),
-// so chroma sample index c covers Y positions [c*ratio, (c+1)*ratio - 1] and
-// is centered at Y position c*ratio + ratio/2 - 0.5.
-//
-// We compute the chroma fractional coordinate corresponding to (x, y), find
-// the four neighbouring chroma samples and linearly blend them.
-func sampleChromaBilinear(plane []byte, stride, planeW, planeH, x, y, hxRatio, hyRatio int) byte {
+// asr16 returns v arithmetically right-shifted by 16 (i.e. floor(v / 65536)).
+// Go's >> on signed int32 is already an arithmetic shift (floor for negatives),
+// so this is just a documented wrapper for clarity.
+func asr16(v int32) int32 { return v >> 16 }
+
+// roundByteF rounds a float64 to the nearest byte value in [0, 255].
+func roundByteF(v float64) byte {
+	if v < 0 {
+		return 0
+	}
+	if v > 255 {
+		return 255
+	}
+	return byte(v + 0.5)
+}
+
+// sampleChromaBilinearF returns the bilinearly upsampled chroma value as a
+// float64 at the given full-resolution Y pixel coordinate. Mirrors libjpeg /
+// PIL behavior: chroma samples are taken to be centered between Y pixels
+// (MPEG-1 siting), so chroma sample index c covers Y positions
+// [c*ratio, (c+1)*ratio - 1] and is centered at Y position c*ratio + ratio/2 - 0.5.
+func sampleChromaBilinearF(plane []byte, stride, planeW, planeH, x, y, hxRatio, hyRatio int) float64 {
 	if planeW <= 0 || planeH <= 0 {
 		return 128
 	}
 	if hxRatio == 1 && hyRatio == 1 {
-		return plane[y*stride+x]
+		return float64(plane[y*stride+x])
 	}
-	// Fractional chroma coordinate (Q16 fixed-point) corresponding to (x, y).
-	// fx = (x + 0.5) / hxRatio - 0.5 == (2x + 1 - hxRatio) / (2*hxRatio)
-	fxNum := 2*x + 1 - hxRatio
-	fyNum := 2*y + 1 - hyRatio
-	twoHx := 2 * hxRatio
-	twoHy := 2 * hyRatio
-	x0 := fxNum / twoHx
-	y0 := fyNum / twoHy
-	dxNum := fxNum - x0*twoHx
-	dyNum := fyNum - y0*twoHy
-	if dxNum < 0 {
+	// Fractional chroma coordinate corresponding to (x, y).
+	fx := (float64(x)+0.5)/float64(hxRatio) - 0.5
+	fy := (float64(y)+0.5)/float64(hyRatio) - 0.5
+	x0 := int(fx)
+	if fx < 0 && fx != float64(x0) {
 		x0--
-		dxNum += twoHx
 	}
-	if dyNum < 0 {
+	y0 := int(fy)
+	if fy < 0 && fy != float64(y0) {
 		y0--
-		dyNum += twoHy
 	}
+	dx := fx - float64(x0)
+	dy := fy - float64(y0)
 	x1 := x0 + 1
 	y1 := y0 + 1
 	if x0 < 0 {
@@ -224,16 +232,11 @@ func sampleChromaBilinear(plane []byte, stride, planeW, planeH, x, y, hxRatio, h
 	if y0 >= planeH {
 		y0 = planeH - 1
 	}
-	a := int(plane[y0*stride+x0])
-	b := int(plane[y0*stride+x1])
-	c := int(plane[y1*stride+x0])
-	d := int(plane[y1*stride+x1])
-	// Bilinear blend in Q16 fixed-point.
-	top := a*(twoHx-dxNum) + b*dxNum
-	bot := c*(twoHx-dxNum) + d*dxNum
-	val := top*(twoHy-dyNum) + bot*dyNum
-	div := twoHx * twoHy
-	return byte((val + div/2) / div)
+	a := float64(plane[y0*stride+x0])
+	b := float64(plane[y0*stride+x1])
+	c := float64(plane[y1*stride+x0])
+	d := float64(plane[y1*stride+x1])
+	return a*(1-dx)*(1-dy) + b*dx*(1-dy) + c*(1-dx)*dy + d*dx*dy
 }
 
 // PadToSquare pads the HWC image data to a square by adding zeros.
